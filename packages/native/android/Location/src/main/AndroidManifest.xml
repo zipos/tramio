@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    @tramio/native — Location_Service Android manifest (task 8.2).
+
+    The host app's manifest already declares the runtime permissions
+    (ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION,
+    ACCESS_BACKGROUND_LOCATION, FOREGROUND_SERVICE,
+    FOREGROUND_SERVICE_LOCATION, FOREGROUND_SERVICE_MEDIA_PLAYBACK,
+    POST_NOTIFICATIONS, WAKE_LOCK) via `app.config.ts`'s
+    `android.permissions` array. We re-declare them here so the library
+    module is self-contained when consumed standalone (e.g. for tests):
+    the Android manifest merger deduplicates entries with identical
+    attributes.
+
+    The `<service>` and `<receiver>` declarations below are the canonical
+    home for the foreground service and the geofence broadcast receiver.
+    `withTramioForegroundService` (the Expo config plugin) also declares
+    the service in the host app's manifest as a defense-in-depth
+    measure, with matching attributes so the merger collapses them.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <application>
+        <!--
+            Foreground service that keeps the tour alive while the screen
+            is locked. `foregroundServiceType="location|mediaPlayback"`
+            mirrors the value emitted by the `withTramioForegroundService`
+            config plugin (Req 12.1, 12.2).
+        -->
+        <service
+            android:name="com.tramio.location.TramioTourForegroundService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location|mediaPlayback"
+            tools:replace="android:foregroundServiceType" />
+
+        <!--
+            Geofence transition receiver. GeofencingClient delivers ENTER
+            and DWELL transitions to a PendingIntent targeting this
+            receiver (Req 11.2, 12.2, 12.3). The receiver wakes the
+            foreground service and forwards the event to JS.
+        -->
+        <receiver
+            android:name="com.tramio.location.TramioGeofenceBroadcastReceiver"
+            android:enabled="true"
+            android:exported="false" />
+    </application>
+</manifest>

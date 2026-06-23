@@ -1,0 +1,12 @@
+{
+  "name": "@tramio/clients",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Catalog_Client and Entitlement_Client: REST wrappers and the in-tour cellular chokepoint.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "jest"
+  }
+}

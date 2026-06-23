@@ -1,0 +1,12 @@
+{
+  "name": "@tramio/engine",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pure Tour_Engine reducer: state machine, geofence pipeline, dead-reckoning, deviation, entitlement-aware playback dispatch.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "jest"
+  }
+}

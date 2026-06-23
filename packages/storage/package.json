@@ -1,0 +1,12 @@
+{
+  "name": "@tramio/storage",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Storage_Manager: filesystem layout, SQLite, Offline_Pack downloader, LRU eviction, license token cache.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "jest"
+  }
+}

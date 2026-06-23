@@ -1,0 +1,89 @@
+// @tramio/native — Location_Service Android library module (task 8.2).
+//
+// This is a self-contained Android Gradle library module that ships
+// the Location_Service turbo-module-friendly classes:
+//
+//   - com.tramio.location.TramioLocationServiceModule
+//   - com.tramio.location.TramioLocationServicePackage
+//   - com.tramio.location.TramioTourForegroundService
+//   - com.tramio.location.TramioGeofenceBroadcastReceiver
+//
+// Wiring into the Expo-bare app is documented in `README.md`. In short:
+//   1. include the module from `settings.gradle`:
+//        include ':tramio-location'
+//        project(':tramio-location').projectDir =
+//            new File(rootProject.projectDir, '../packages/native/android/Location')
+//   2. add it as a dependency of the app:
+//        implementation project(':tramio-location')
+//   3. register the package in MainApplication:
+//        packages.add(TramioLocationServicePackage())
+//
+// Native Android compilation is not part of task 8.2 (sources only);
+// this build.gradle is the contract the prebuild step will honor when
+// the app's `expo prebuild` regenerates the `android/` workspace.
+
+plugins {
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.android'
+}
+
+// React Native's Android bits expose a `safeExtGet` helper across most
+// templates; we re-declare a minimal version here so this module builds
+// even when the parent project root_build.gradle does not pre-define it.
+def safeExtGet(prop, fallback) {
+    rootProject.ext.has(prop) ? rootProject.ext.get(prop) : fallback
+}
+
+android {
+    namespace 'com.tramio.location'
+
+    compileSdkVersion safeExtGet('compileSdkVersion', 35)
+
+    defaultConfig {
+        minSdkVersion safeExtGet('minSdkVersion', 26)
+        targetSdkVersion safeExtGet('targetSdkVersion', 35)
+        consumerProguardFiles 'consumer-rules.pro'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    sourceSets {
+        main {
+            // Default `src/main/java` + `src/main/AndroidManifest.xml`.
+            // `androidManifestFile` is left at default; the manifest in
+            // `src/main/AndroidManifest.xml` declares the service +
+            // broadcast receiver components consumers need.
+        }
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    // React Native facebook artifact; the version is pinned by the
+    // host app's React Native gradle plugin so we use a `+`-style
+    // dependency to follow the host's version.
+    implementation 'com.facebook.react:react-android:+'
+
+    // Google Play Services — FusedLocationProviderClient + GeofencingClient.
+    // Pinned to a version that supports the `Priority` enum (introduced in
+    // 21.x) and the per-geofence `DWELL` transition, both required by the
+    // Battery and Polling Policy table in design.md.
+    implementation 'com.google.android.gms:play-services-location:21.3.0'
+
+    // Kotlin stdlib + AndroidX surface used by the foreground service
+    // helper (NotificationCompat, ContextCompat, NotificationChannel
+    // creation on Android 8+).
+    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.9.24'
+}

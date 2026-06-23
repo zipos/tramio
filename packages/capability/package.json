@@ -1,0 +1,12 @@
+{
+  "name": "@tramio/capability",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Capability_Layer: OS_MATRIX descriptor table and runtime capability probes (task 9.1).",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "jest"
+  }
+}

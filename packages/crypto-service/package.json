@@ -1,0 +1,12 @@
+{
+  "name": "@tramio/crypto-service",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Crypto_Service: hardware-backed secret, Wrapping_Key derivation, License_Token verification, framed AES-GCM streaming decrypt.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "jest"
+  }
+}

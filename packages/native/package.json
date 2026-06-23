@@ -1,0 +1,12 @@
+{
+  "name": "@tramio/native",
+  "version": "0.0.0",
+  "private": true,
+  "description": "TypeScript specs and command translators for native turbo modules: Location_Service, Audio_Service, TTS_Engine.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "jest"
+  }
+}

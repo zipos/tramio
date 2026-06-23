@@ -1,0 +1,19 @@
+{
+  "name": "@tramio/authoring",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Authoring_Schema definitions and Content_Bundle validator (also exposes the bundle-validate CLI).",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "bin": {
+    "bundle-validate": "bin/bundle-validate.js"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "bundle-validate": "ts-node src/bin/bundle-validate.ts"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0"
+  }
+}

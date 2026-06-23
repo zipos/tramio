@@ -1,0 +1,12 @@
+{
+  "name": "@tramio/branding",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Single source of truth for public-brand strings (display name, primary domain, deep-link scheme, bundle IDs).",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "jest"
+  }
+}

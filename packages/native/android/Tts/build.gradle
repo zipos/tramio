@@ -1,0 +1,60 @@
+// build.gradle
+// @tramio/native — Android library module for TTS_Engine (task 8.6).
+//
+// This file is a `com.android.library` module declaration. The
+// consuming Expo bare project's `settings.gradle` will eventually
+// include this directory once the workspace is wired in task 13.1:
+//
+//   include ':tramio-tts'
+//   project(':tramio-tts').projectDir = file('../packages/native/android/Tts')
+//
+// Until then this file documents the build dependencies the module
+// needs and lets a developer compile the Kotlin sources standalone
+// against any React Native 0.73+ checkout.
+//
+// The minimum SDK is 21 (Android 5.0 Lollipop) which is the React
+// Native baseline. `AudioFocusRequest` (API 26+) is gated behind
+// `Build.VERSION.SDK_INT` in `TramioTtsEngineModule.kt` so the
+// legacy focus-request path is used on older devices.
+
+apply plugin: 'com.android.library'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+android {
+  namespace 'app.tramio.client.tts'
+  compileSdk 34
+
+  defaultConfig {
+    minSdk 21
+    targetSdk 34
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+
+  kotlinOptions {
+    jvmTarget = '17'
+  }
+
+  sourceSets {
+    main {
+      java.srcDirs = ['.']
+      // No resources, no manifest entries; the consuming app's
+      // `AndroidManifest.xml` already declares the runtime
+      // permissions and background-mode entries (task 1.1).
+    }
+  }
+}
+
+dependencies {
+  // React Native bridge surface (`ReactContextBaseJavaModule`,
+  // `ReactPackage`, `Arguments`). The consuming app's gradle is the
+  // single source of truth for the React Native version pin; we
+  // declare the dependency without a version so it inherits.
+  //noinspection GradleDependency
+  implementation 'com.facebook.react:react-native:+'
+
+  implementation "org.jetbrains.kotlin:kotlin-stdlib:${kotlin_version ?: '1.9.22'}"
+}

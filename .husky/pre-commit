@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+# Tramio pre-commit hook.
+#
+# Runs in two passes:
+#   1. lint-staged: ESLint --fix + Prettier on staged files only (fast).
+#   2. typecheck: full `tsc --noEmit` across the workspace.
+#
+# `tsc` is run unconditionally because TypeScript errors often involve
+# files outside the staged set (e.g. a renamed export breaking a consumer).
+
+npx --no-install lint-staged
+npx --no-install tsc --noEmit

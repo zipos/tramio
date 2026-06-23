@@ -1,0 +1,30 @@
+// build.gradle notes for the Audio_Service Android module
+// (task 8.4 / .kiro/specs/urban-narrative-mvp/tasks.md).
+//
+// This file is documentation, not a real Gradle script. Expo bare
+// projects regenerate `android/` from `app.config.ts` + local config
+// plugins; the consuming app's `android/app/build.gradle` is the
+// canonical place to declare these dependencies. The Tramio Expo
+// config plugin (task 13.1 wiring) will inject these lines so they
+// don't have to be hand-edited after every prebuild.
+//
+// Add to `dependencies { … }` in `android/app/build.gradle`:
+//
+//     // Audio_Service (task 8.4)
+//     implementation "androidx.media3:media3-exoplayer:1.4.1"
+//     implementation "androidx.media3:media3-common:1.4.1"
+//
+// Add to `defaultConfig { … }` (already pinned via expo-build-properties
+// in `app.config.ts`, repeated here for cross-reference):
+//
+//     compileSdkVersion 35
+//     targetSdkVersion 35
+//     minSdkVersion 26   // AudioFocusRequest (API 26+) is required
+//
+// Manifest entries are declared by the existing
+// `withTramioForegroundService` config plugin
+// (`plugins/withTramioForegroundService.js`), which also registers the
+// foreground service from task 8.2 with foregroundServiceType
+// `location|mediaPlayback`. No additional manifest changes are
+// required for Audio_Service alone; FOREGROUND_SERVICE_MEDIA_PLAYBACK
+// is already declared in `app.config.ts`.
