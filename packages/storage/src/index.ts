@@ -30,6 +30,8 @@ export {
   type SqliteValue,
 } from './sqlite';
 
+export { expoSqliteDriver, openExpoSqliteDriver } from './expoSqliteDriver';
+
 export { migrate, readCurrentVersion, MIGRATIONS } from './migrations';
 
 export {

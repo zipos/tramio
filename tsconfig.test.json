@@ -4,7 +4,7 @@
     "module": "CommonJS",
     "moduleResolution": "node",
     "lib": ["ES2022", "DOM"],
-    "jsx": "react-native",
+    "jsx": "react",
     "types": ["jest", "node"],
     "strict": true,
     "noImplicitAny": true,

@@ -26,7 +26,7 @@ import {
   type PipelineState,
   type PipelineAccepted,
 } from './pipeline';
-import { angularDiffDeg, haversine } from './geo';
+import { angularDiffDeg } from './geo';
 import type { Geofence, LatLng, PositionUpdate } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -48,26 +48,14 @@ const ROUTE_TANGENT_DEG = 90;
  * Accuracy is always good (10 m) and speed is low enough to avoid spike
  * rejection between consecutive 1-second samples.
  */
-function makeUpdate(
-  ts: number,
-  coord: LatLng,
-  headingDeg: number | undefined,
-): PositionUpdate {
+function makeUpdate(ts: number, coord: LatLng, headingDeg: number | undefined): PositionUpdate {
   return {
     ts,
     coord,
     accuracyM: 10,
     speedMps: 2,
-    headingDeg,
+    ...(headingDeg !== undefined ? { headingDeg } : {}),
   };
-}
-
-/**
- * Offset a coordinate slightly in longitude. At lat 51, 1 degree of
- * longitude ≈ 70 km, so 0.001° ≈ 70 m.
- */
-function offsetLon(base: LatLng, dLon: number): LatLng {
-  return [base[0], base[1] + dLon];
 }
 
 // ---------------------------------------------------------------------------
@@ -308,10 +296,7 @@ describe('Property 2: Trigger requires dwell and direction match', () => {
         exitTs += 5_000; // 5 seconds between exit steps
         // Interpolate between center and exitCoord
         const frac = (e + 1) / exitSteps;
-        const interpCoord: LatLng = [
-          51.0,
-          17.005 + (exitCoord[1] - 17.005) * frac,
-        ];
+        const interpCoord: LatLng = [51.0, 17.005 + (exitCoord[1] - 17.005) * frac];
         const exitRaw = makeUpdate(exitTs, interpCoord, ROUTE_TANGENT_DEG);
         const exitOut = step(state, exitRaw, exitTs);
         if (!isRejected(exitOut)) {
@@ -341,10 +326,6 @@ describe('Property 2: Trigger requires dwell and direction match', () => {
         // few ticks. Only check for premature fire when the POI is actually
         // a candidate (dwell entry exists).
         if (accepted.fire !== undefined) {
-          // Check if accumulated dwell could possibly be >= dwellSec.
-          // Since we just re-entered, accumulated should start from 0.
-          const dwellEntry = accepted.nextState.dwell['poi-reset'] ??
-            state.dwell['poi-reset'];
           throw new Error(
             `Trigger fired prematurely at re-entry tick ${i} ` +
               `(dwellSec = ${dwellSec}). Dwell counter was not properly reset after exit.`,

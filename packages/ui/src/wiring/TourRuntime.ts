@@ -18,6 +18,7 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import type { EngineCommand, EngineEvent, TourState, StartTourConfig } from '../../../engine/src';
 import { INITIAL_STATE, reduce } from '../../../engine/src';
 import { LocationAdapter } from './locationAdapter';
+import { DEFAULT_PLAYBACK_SPEED, type PlaybackSpeed } from './playbackSpeed';
 
 export type StateListener = (state: TourState) => void;
 
@@ -43,6 +44,8 @@ export class TourRuntime {
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
   private locationAdapter: LocationAdapter | null = null;
   private readonly narrativeResolver: NarrativeResolver;
+  private playbackSpeed: PlaybackSpeed = DEFAULT_PLAYBACK_SPEED;
+  private playbackSpeedListeners = new Set<(speed: PlaybackSpeed) => void>();
 
   constructor(opts?: TourRuntimeOptions) {
     this.narrativeResolver = opts?.narrativeResolver ?? (() => null);
@@ -81,6 +84,22 @@ export class TourRuntime {
 
   getState(): TourState {
     return this.state;
+  }
+
+  getPlaybackSpeed(): PlaybackSpeed {
+    return this.playbackSpeed;
+  }
+
+  setPlaybackSpeed(speed: PlaybackSpeed): void {
+    this.playbackSpeed = speed;
+    for (const listener of this.playbackSpeedListeners) listener(speed);
+  }
+
+  subscribePlaybackSpeed(listener: (speed: PlaybackSpeed) => void): () => void {
+    this.playbackSpeedListeners.add(listener);
+    return () => {
+      this.playbackSpeedListeners.delete(listener);
+    };
   }
 
   subscribe(listener: StateListener): () => void {
@@ -152,8 +171,7 @@ export class TourRuntime {
 
   private handlePlaySegment(segmentId: string): void {
     const text =
-      this.narrativeResolver(segmentId) ??
-      'Approaching a point of interest along your route.';
+      this.narrativeResolver(segmentId) ?? 'Approaching a point of interest along your route.';
     const language = this.config?.language ?? 'en';
     // Stop anything in flight to preserve the single-segment invariant,
     // then speak. `onDone` feeds AudioFinished back into the reducer so
@@ -161,6 +179,7 @@ export class TourRuntime {
     void Speech.stop().catch(() => undefined);
     Speech.speak(text, {
       language,
+      rate: this.playbackSpeed,
       onDone: () => this.dispatch({ kind: 'AudioFinished', segmentId }),
       onStopped: () => this.dispatch({ kind: 'AudioFinished', segmentId }),
       onError: () => this.dispatch({ kind: 'AudioFinished', segmentId }),

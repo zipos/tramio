@@ -13,7 +13,7 @@ import { RouteSelectionScreen } from './packages/ui/src/screens/RouteSelectionSc
 import { TourPlaybackScreen } from './packages/ui/src/screens/TourPlaybackScreen';
 
 export default function App(): ReactElement {
-  const { state, startTour, endTour } = useTourEngine();
+  const { state, caption, playbackSpeed, setPlaybackSpeed, startTour, endTour } = useTourEngine();
 
   // Show "Tour ended" briefly — the engine auto-transitions Ended → Idle
   // via the release-timeout timer (2s), so we just render the message
@@ -27,7 +27,15 @@ export default function App(): ReactElement {
       case 'Standby':
       case 'DeadReckoning':
       case 'Deviation':
-        return <TourPlaybackScreen state={state} onEndTour={endTour} />;
+        return (
+          <TourPlaybackScreen
+            state={state}
+            caption={caption}
+            playbackSpeed={playbackSpeed}
+            onPlaybackSpeedChange={setPlaybackSpeed}
+            onEndTour={endTour}
+          />
+        );
       case 'Ended':
         return (
           <View style={styles.endedContainer}>

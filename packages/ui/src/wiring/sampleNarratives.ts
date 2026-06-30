@@ -40,3 +40,9 @@ const NARRATIVES: Record<string, string> = {
 /** Resolver for the embedded demo narratives. */
 export const sampleNarrativeResolver: NarrativeResolver = (segmentId) =>
   NARRATIVES[segmentId] ?? null;
+
+/** Caption text for the segment currently playing (or null if unknown). */
+export function resolveNarrativeCaption(segmentId: string | null): string | null {
+  if (segmentId === null) return null;
+  return NARRATIVES[segmentId] ?? null;
+}

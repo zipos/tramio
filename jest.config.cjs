@@ -32,6 +32,13 @@ module.exports = {
     ],
   },
   testPathIgnorePatterns: ['/node_modules/', '/dist/', '/ios/', '/android/'],
+  // Package-level jest configs are not used when running from the repo root;
+  // map tests need the same mocks declared in packages/map/jest.config.js.
+  moduleNameMapper: {
+    '^react-native$': '<rootDir>/packages/map/src/__mocks__/react-native.ts',
+    '^@maplibre/maplibre-react-native$':
+      '<rootDir>/packages/map/src/__mocks__/maplibre-react-native.ts',
+  },
   clearMocks: true,
   resetMocks: true,
   restoreMocks: true,

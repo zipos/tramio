@@ -1,5 +1,3 @@
-import type { ExpoConfig } from 'expo/config';
-
 /**
  * Tramio Expo bare configuration.
  *
@@ -18,7 +16,7 @@ const IOS_BUNDLE_ID = 'app.tramio.client';
 const ANDROID_PACKAGE = 'app.tramio.client';
 const SCHEME = 'tramio';
 
-const config: ExpoConfig = {
+const config = {
   name: 'Tramio',
   slug: 'tramio',
   version: '0.1.0',
@@ -26,7 +24,6 @@ const config: ExpoConfig = {
   icon: './assets/icon.png',
   scheme: SCHEME,
   userInterfaceStyle: 'automatic',
-  newArchEnabled: true,
   splash: {
     image: './assets/splash-icon.png',
     resizeMode: 'contain',
@@ -67,7 +64,6 @@ const config: ExpoConfig = {
 
   android: {
     package: ANDROID_PACKAGE,
-    edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
@@ -97,19 +93,20 @@ const config: ExpoConfig = {
   },
 
   plugins: [
-    // Pin Android compile/target SDKs and iOS deployment target to versions
-    // that support the foreground-service / region-monitoring APIs the
-    // Location_Service turbo module relies on.
+    'expo-sqlite',
+    // Background location dwell delivery while the tour runs pocketed.
+    'expo-task-manager',
+    // Pin Android compile/target SDKs (API 37 = Android 17) and iOS deployment target for Expo SDK 57.
     [
       'expo-build-properties',
       {
         android: {
-          compileSdkVersion: 35,
-          targetSdkVersion: 35,
+          compileSdkVersion: 37,
+          targetSdkVersion: 37,
           minSdkVersion: 26,
         },
         ios: {
-          deploymentTarget: '15.1',
+          deploymentTarget: '16.4',
         },
       },
     ],

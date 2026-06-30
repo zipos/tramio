@@ -9,10 +9,27 @@ import type { TourState } from '../../../engine/src';
 import { INITIAL_STATE } from '../../../engine/src';
 import type { StartTourConfig } from '../../../engine/src';
 import { TourRuntime } from './TourRuntime';
-import { sampleNarrativeResolver } from './sampleNarratives';
+import { resolveNarrativeCaption, sampleNarrativeResolver } from './sampleNarratives';
+import { DEFAULT_PLAYBACK_SPEED, type PlaybackSpeed } from './playbackSpeed';
+
+function getPlayingSegmentId(state: TourState): string | null {
+  if (
+    state.phase === 'Active' ||
+    state.phase === 'Standby' ||
+    state.phase === 'DeadReckoning' ||
+    state.phase === 'Deviation'
+  ) {
+    return state.session.playing?.segmentId ?? null;
+  }
+  return null;
+}
 
 export interface UseTourEngineResult {
   state: TourState;
+  /** Narrative caption for the segment currently playing, if any. */
+  caption: string | null;
+  playbackSpeed: PlaybackSpeed;
+  setPlaybackSpeed: (speed: PlaybackSpeed) => void;
   startTour: (config: StartTourConfig) => void;
   endTour: () => void;
 }
@@ -29,6 +46,7 @@ export interface UseTourEngineResult {
 export function useTourEngine(): UseTourEngineResult {
   const runtimeRef = useRef<TourRuntime | null>(null);
   const [state, setState] = useState<TourState>(INITIAL_STATE);
+  const [playbackSpeed, setPlaybackSpeedState] = useState<PlaybackSpeed>(DEFAULT_PLAYBACK_SPEED);
 
   // Lazily create the runtime once, wired with the embedded demo narratives.
   if (runtimeRef.current === null) {
@@ -37,11 +55,15 @@ export function useTourEngine(): UseTourEngineResult {
 
   useEffect(() => {
     const runtime = runtimeRef.current!;
-    const unsub = runtime.subscribe((newState) => {
+    const unsubState = runtime.subscribe((newState) => {
       setState(newState);
     });
+    const unsubSpeed = runtime.subscribePlaybackSpeed((speed) => {
+      setPlaybackSpeedState(speed);
+    });
     return () => {
-      unsub();
+      unsubState();
+      unsubSpeed();
     };
   }, []);
 
@@ -60,5 +82,11 @@ export function useTourEngine(): UseTourEngineResult {
     runtimeRef.current?.end();
   }, []);
 
-  return { state, startTour, endTour };
+  const setPlaybackSpeed = useCallback((speed: PlaybackSpeed) => {
+    runtimeRef.current?.setPlaybackSpeed(speed);
+  }, []);
+
+  const caption = resolveNarrativeCaption(getPlayingSegmentId(state));
+
+  return { state, caption, playbackSpeed, setPlaybackSpeed, startTour, endTour };
 }

@@ -166,14 +166,18 @@ describe('Property 3: At most one segment plays at any time and no POI plays twi
   // Sub-property A: |playing| <= 1 at every step
   // -------------------------------------------------------------------------
   property(
-    { n: 3, title: 'At most one segment plays at any time and no POI plays twice in a session — single segment invariant' },
+    {
+      n: 3,
+      title:
+        'At most one segment plays at any time and no POI plays twice in a session — single segment invariant',
+    },
     arbEventSequence,
     (events) => {
       let state = startTour();
       let now = 1000;
 
       for (let i = 0; i < events.length; i++) {
-        const event = events[i];
+        const event = events[i]!;
         const result = reduce(state, event, now);
         state = result.state;
         now += 1000;
@@ -207,14 +211,18 @@ describe('Property 3: At most one segment plays at any time and no POI plays twi
   // Sub-property B: Once a POI is consumed, it never plays again
   // -------------------------------------------------------------------------
   property(
-    { n: 3, title: 'At most one segment plays at any time and no POI plays twice in a session — no replay after consumed' },
+    {
+      n: 3,
+      title:
+        'At most one segment plays at any time and no POI plays twice in a session — no replay after consumed',
+    },
     arbEventSequence,
     (events) => {
       let state = startTour();
       let now = 1000;
 
       for (let i = 0; i < events.length; i++) {
-        const event = events[i];
+        const event = events[i]!;
         const prevSession = getSession(state);
         const prevConsumed = prevSession ? new Set(prevSession.consumed) : new Set<string>();
 
@@ -227,7 +235,7 @@ describe('Property 3: At most one segment plays at any time and no POI plays twi
         for (const cmd of result.commands) {
           if (cmd.kind === 'PlaySegment') {
             // Extract poiId from segmentId (format: `{poiId}:{lang}`)
-            const poiId = cmd.segmentId.split(':')[0];
+            const poiId = cmd.segmentId.split(':')[0] ?? '';
             if (prevConsumed.has(poiId)) {
               throw new Error(
                 `PlaySegment emitted for consumed POI "${poiId}" at event index ${i}. ` +
@@ -256,7 +264,11 @@ describe('Property 3: At most one segment plays at any time and no POI plays twi
   // Sub-property C: Consumed set grows monotonically (never shrinks)
   // -------------------------------------------------------------------------
   property(
-    { n: 3, title: 'At most one segment plays at any time and no POI plays twice in a session — consumed set monotonic' },
+    {
+      n: 3,
+      title:
+        'At most one segment plays at any time and no POI plays twice in a session — consumed set monotonic',
+    },
     arbEventSequence,
     (events) => {
       let state = startTour();
@@ -264,7 +276,7 @@ describe('Property 3: At most one segment plays at any time and no POI plays twi
       let prevConsumedSnapshot: Set<string> = new Set();
 
       for (let i = 0; i < events.length; i++) {
-        const event = events[i];
+        const event = events[i]!;
         const result = reduce(state, event, now);
         state = result.state;
         now += 1000;

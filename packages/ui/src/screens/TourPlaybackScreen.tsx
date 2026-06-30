@@ -1,14 +1,20 @@
-// TourPlaybackScreen — Shows current tour state and playback info.
-//
-// Displays the engine phase, currently playing segment (if any), and
-// an "End Tour" button.
+// TourPlaybackScreen — Shows current tour state, synchronized caption, and controls.
 
 import type { ReactElement } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { TourState } from '../../../engine/src';
+import {
+  PLAYBACK_SPEEDS,
+  formatPlaybackSpeedLabel,
+  type PlaybackSpeed,
+} from '../wiring/playbackSpeed';
 
 export interface TourPlaybackScreenProps {
   state: TourState;
+  /** Narrative text for the segment currently playing (Req 16.2). */
+  caption?: string | null;
+  playbackSpeed: PlaybackSpeed;
+  onPlaybackSpeedChange: (speed: PlaybackSpeed) => void;
   onEndTour: () => void;
 }
 
@@ -39,9 +45,16 @@ function getPhaseLabel(phase: TourState['phase']): string {
   }
 }
 
-export function TourPlaybackScreen({ state, onEndTour }: TourPlaybackScreenProps): ReactElement {
+export function TourPlaybackScreen({
+  state,
+  caption = null,
+  playbackSpeed,
+  onPlaybackSpeedChange,
+  onEndTour,
+}: TourPlaybackScreenProps): ReactElement {
   const segmentId = getPlayingSegmentId(state);
   const phaseLabel = getPhaseLabel(state.phase);
+  const showCaption = caption !== null && caption !== '';
 
   return (
     <View style={styles.container}>
@@ -58,12 +71,46 @@ export function TourPlaybackScreen({ state, onEndTour }: TourPlaybackScreenProps
           <Text style={styles.segmentLabel}>Now playing:</Text>
           <Text
             style={styles.segmentValue}
-            accessibilityLabel={
-              segmentId ? `Playing segment ${segmentId}` : 'Waiting for next POI'
-            }
+            accessibilityLabel={segmentId ? `Playing segment ${segmentId}` : 'Waiting for next POI'}
           >
             {segmentId ?? 'Waiting for next POI...'}
           </Text>
+        </View>
+      </View>
+
+      {showCaption ? (
+        <View
+          style={styles.captionCard}
+          accessibilityRole="text"
+          accessibilityLabel={`Narration caption: ${caption}`}
+        >
+          <Text style={styles.captionLabel}>Caption</Text>
+          <Text style={styles.captionText} maxFontSizeMultiplier={2}>
+            {caption}
+          </Text>
+        </View>
+      ) : null}
+
+      <View style={styles.speedCard} accessibilityRole="adjustable">
+        <Text style={styles.speedLabel}>Playback speed</Text>
+        <View style={styles.speedRow}>
+          {PLAYBACK_SPEEDS.map((speed) => {
+            const selected = speed === playbackSpeed;
+            return (
+              <TouchableOpacity
+                key={speed}
+                style={[styles.speedButton, selected && styles.speedButtonSelected]}
+                onPress={() => onPlaybackSpeedChange(speed)}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                accessibilityLabel={`Playback speed ${formatPlaybackSpeedLabel(speed)}`}
+              >
+                <Text style={[styles.speedButtonText, selected && styles.speedButtonTextSelected]}>
+                  {formatPlaybackSpeedLabel(speed)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
 
@@ -98,7 +145,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0f9ff',
     borderRadius: 12,
     padding: 20,
-    marginBottom: 32,
+    marginBottom: 16,
   },
   phaseLabel: {
     fontSize: 16,
@@ -118,6 +165,62 @@ const styles = StyleSheet.create({
   segmentValue: {
     fontSize: 15,
     color: '#1a1a1a',
+  },
+  captionCard: {
+    width: '100%',
+    backgroundColor: '#fafafa',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#e5e5e5',
+  },
+  captionLabel: {
+    fontSize: 13,
+    color: '#666',
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  captionText: {
+    fontSize: 16,
+    lineHeight: 24,
+    color: '#1a1a1a',
+  },
+  speedCard: {
+    width: '100%',
+    marginBottom: 24,
+  },
+  speedLabel: {
+    fontSize: 13,
+    color: '#666',
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  speedRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'center',
+  },
+  speedButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#d4d4d4',
+    backgroundColor: '#ffffff',
+  },
+  speedButtonSelected: {
+    borderColor: '#2563eb',
+    backgroundColor: '#eff6ff',
+  },
+  speedButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#444',
+  },
+  speedButtonTextSelected: {
+    color: '#1d4ed8',
   },
   endButton: {
     backgroundColor: '#dc2626',

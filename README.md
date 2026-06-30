@@ -3,6 +3,11 @@
 Geofenced audio guide for ordinary city transit rides. React Native (Expo bare) +
 TypeScript app targeting iOS and Android.
 
+> **Portfolio demo.** Spec-driven MVP showcasing monorepo architecture, a pure
+> tour engine with property tests, Expo-module runtime wiring, and offline-first
+> design. Licensed under [Apache-2.0](LICENSE). See [HANDOFF.md](HANDOFF.md) for
+> engineering context.
+
 ## Layout
 
 The repository root is the Expo bare React Native app. Native projects (`ios/`,
@@ -24,8 +29,9 @@ The repository root is the Expo bare React Native app. Native projects (`ios/`,
 ## Prerequisites
 
 - Node 20 or newer (the lockfile is built against the active Node).
+- Expo SDK 57 (React Native 0.86, React 19.2). Run `npx expo install --fix` after pulling.
 - An Expo account (`npx expo login`) for EAS Build.
-- Xcode 16 + CocoaPods for iOS; Android Studio + JDK 17 for Android.
+- Xcode 16 + CocoaPods for iOS; Android Studio with **SDK Platform 37** (Android 17) + Build-Tools 37.x for Android.
 
 ## Development
 
@@ -68,3 +74,7 @@ following entries flow from `app.config.ts` into the generated manifests:
 - Foreground service component `.TramioTourForegroundService` with
   `foregroundServiceType="location|mediaPlayback"`, registered via the
   `withTramioForegroundService` config plugin (Req 12.1, 12.2).
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
