@@ -1,18 +1,27 @@
 // TourPlaybackScreen — Shows current tour state, synchronized caption, and controls.
 
 import type { ReactElement } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { TourState } from '../../../engine/src';
+import { OfflineMap } from '../../../map/src';
+import type { TilePackRef } from '../../../map/src';
 import {
   PLAYBACK_SPEEDS,
   formatPlaybackSpeedLabel,
   type PlaybackSpeed,
 } from '../wiring/playbackSpeed';
 
+export interface MapPlaybackContext {
+  docsDir: string;
+  tilePack: TilePackRef;
+  initialCenter?: readonly [number, number];
+}
+
 export interface TourPlaybackScreenProps {
   state: TourState;
-  /** Narrative text for the segment currently playing (Req 16.2). */
+  routeTitle?: string | null;
   caption?: string | null;
+  mapContext?: MapPlaybackContext | null;
   playbackSpeed: PlaybackSpeed;
   onPlaybackSpeedChange: (speed: PlaybackSpeed) => void;
   onEndTour: () => void;
@@ -47,7 +56,9 @@ function getPhaseLabel(phase: TourState['phase']): string {
 
 export function TourPlaybackScreen({
   state,
+  routeTitle = null,
   caption = null,
+  mapContext = null,
   playbackSpeed,
   onPlaybackSpeedChange,
   onEndTour,
@@ -57,10 +68,27 @@ export function TourPlaybackScreen({
   const showCaption = caption !== null && caption !== '';
 
   return (
-    <View style={styles.container}>
+    <ScrollView contentContainerStyle={styles.scrollContent}>
       <Text style={styles.title} accessibilityRole="header">
-        Tour in Progress
+        {routeTitle ?? 'Tour in Progress'}
       </Text>
+      {routeTitle ? (
+        <Text style={styles.routeSubtitle} accessibilityLabel="Tour status">
+          Tour in progress
+        </Text>
+      ) : null}
+
+      {mapContext ? (
+        <View style={styles.mapCard}>
+          <OfflineMap
+            docsDir={mapContext.docsDir}
+            tilePack={mapContext.tilePack}
+            {...(mapContext.initialCenter ? { initialCenter: mapContext.initialCenter } : {})}
+            style={styles.map}
+          />
+          <Text style={styles.mapHint}>Offline vector tiles from installed pack</Text>
+        </View>
+      ) : null}
 
       <View style={styles.statusCard}>
         <Text style={styles.phaseLabel} accessibilityLabel={`Tour phase: ${phaseLabel}`}>
@@ -122,23 +150,45 @@ export function TourPlaybackScreen({
       >
         <Text style={styles.endButtonText}>End Tour</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  scrollContent: {
+    flexGrow: 1,
     backgroundColor: '#ffffff',
     alignItems: 'center',
-    justifyContent: 'center',
     padding: 24,
+    paddingBottom: 40,
   },
   title: {
     fontSize: 24,
     fontWeight: '700',
-    marginBottom: 24,
+    marginBottom: 4,
     color: '#1a1a1a',
+    textAlign: 'center',
+  },
+  routeSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 16,
+  },
+  mapCard: {
+    width: '100%',
+    marginBottom: 16,
+  },
+  map: {
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  mapHint: {
+    marginTop: 6,
+    fontSize: 11,
+    color: '#64748b',
+    textAlign: 'center',
   },
   statusCard: {
     width: '100%',

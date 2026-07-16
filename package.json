@@ -2,7 +2,7 @@
   "name": "tramio",
   "version": "0.1.0",
   "private": true,
-  "license": "Apache-2.0",
+  "license": "AGPL-3.0-or-later",
   "main": "index.ts",
   "scripts": {
     "start": "expo start --dev-client",
@@ -18,12 +18,19 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:ci": "jest --ci --runInBand",
+    "backend:dev": "node packages/backend/bin/serve.js",
+    "pack:build-warsaw": "node tooling/build-warsaw-dev-pack.mjs",
+    "keys:generate-dev": "node tooling/generate-dev-catalog-key.mjs",
     "prepare": "husky"
   },
   "dependencies": {
     "@fastify/sensible": "^6.0.4",
+    "@maplibre/maplibre-react-native": "^10.4.2",
+    "@noble/ed25519": "^3.1.0",
     "expo": "^57.0.0",
     "expo-build-properties": "~57.0.2",
+    "expo-constants": "~57.0.0",
+    "expo-file-system": "~57.0.0",
     "expo-keep-awake": "~57.0.0",
     "expo-location": "~57.0.1",
     "expo-speech": "~57.0.0",
@@ -69,7 +76,11 @@
     }
   },
   "lint-staged": {
-    "*.{ts,tsx,js,cjs,mjs}": [
+    "*.{ts,tsx,cjs,mjs}": [
+      "eslint --fix --max-warnings=0",
+      "prettier --write"
+    ],
+    "packages/**/*.js": [
       "eslint --fix --max-warnings=0",
       "prettier --write"
     ],

@@ -1,0 +1,10 @@
+{
+  "bundles": [
+    {
+      "bundleId": "warsaw-tram-22-east",
+      "version": "1.0.0",
+      "sizeBytes": 2781,
+      "requiredAppVersion": "0.1.0"
+    }
+  ]
+}

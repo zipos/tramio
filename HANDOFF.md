@@ -102,11 +102,14 @@ for these exist; the logic is stubbed/partial.
 
 ### UI + Wiring (`packages/ui/src/`)
 
-- `screens/RouteSelectionScreen.tsx` — lists the demo route, Start Tour button
-- `screens/TourPlaybackScreen.tsx` — phase + now-playing segment + End Tour
+- `screens/RouteSelectionScreen.tsx` — lists embedded demo routes, route preview, Start Tour
+- `screens/TourPlaybackScreen.tsx` — phase + route title + now-playing segment + captions + speed + End Tour
+- `components/RoutePolylinePreview.tsx` — tile-free route sketch for demo routes
+- `wiring/demoRoute.ts` — embedded demo geometry + metadata (Option C: no on-device pack)
 - `wiring/TourRuntime.ts` — command translator (engine ↔ expo modules)
-- `wiring/useTourEngine.ts` — React hook exposing `{ state, startTour, endTour }`
+- `wiring/useTourEngine.ts` — React hook exposing `{ state, caption, playbackSpeed, startTour, endTour }`
 - `wiring/locationAdapter.ts` — drives the JS geofence pipeline from expo-location fixes
+- `wiring/backgroundLocationTask.ts` — TaskManager background location task
 - `wiring/sampleNarratives.ts` — embedded demo narrative text (PL/EN)
 
 ---
@@ -119,12 +122,13 @@ location, speech, keep-awake, and background tasks. Custom turbo modules under
 cherry-picked per-platform plumbing when Expo is not production-ready for a
 specific requirement.
 
-| Concern           | Module (shipping)                      | Wiring file                                       |
-| ----------------- | -------------------------------------- | ------------------------------------------------- |
-| Location          | `expo-location` + `expo-task-manager`  | `locationAdapter.ts`, `backgroundLocationTask.ts` |
-| TTS               | `expo-speech`                          | `TourRuntime.ts`                                  |
-| Keep-awake        | `expo-keep-awake`                      | `TourRuntime.ts`                                  |
-| Storage (planned) | `expo-sqlite` (`openExpoSqliteDriver`) | `packages/storage/src/expoSqliteDriver.ts`        |
+| Concern       | Module (shipping)                     | Wiring file                                              |
+| ------------- | ------------------------------------- | -------------------------------------------------------- |
+| Location      | `expo-location` + `expo-task-manager` | `locationAdapter.ts`, `backgroundLocationTask.ts`        |
+| TTS           | `expo-speech`                         | `TourRuntime.ts`                                         |
+| Keep-awake    | `expo-keep-awake`                     | `TourRuntime.ts`                                         |
+| Storage       | `expo-sqlite` + `expo-file-system`    | `openDeviceStorage()`, `usePackManager`, `loadPackTour`  |
+| Map (offline) | `@maplibre/maplibre-react-native`     | `OfflineMap` on `TourPlaybackScreen` when pack installed |
 
 ### Native cherry-pick candidates (not wired unless needed)
 
@@ -152,11 +156,14 @@ path reads Markdown from a downloaded Offline_Pack via Storage_Manager).
    permission is denied, the tour falls back to a foreground-only watch and
    pauses when the screen locks. Cherry-pick `packages/native/` Location_Service
    only if this path is still insufficient in field testing.
-2. **No map** — the MapLibre `OfflineMap` component exists but is not mounted
-   on the playback screen.
-3. **Caption UI** — synchronized narrative captions render on the playback
-   screen while a segment plays (demo narratives only; pack-backed captions TBD).
-4. **Single hardcoded route** — see "Demo Content".
+2. **Map on playback** — `OfflineMap` renders when a pack-backed tour starts
+   (tiles from `${docs}/packs/{bundleId}/{version}/tiles/`). Dev pack tile is a
+   placeholder `.pbf`; replace with a real OSM corridor extract for cartography.
+3. **Caption UI** — pack narratives load from installed Offline_Pack Markdown;
+   embedded `sampleNarratives.ts` remains fallback when catalog is unreachable.
+4. **Catalog required for full flow** — run `npm run backend:dev` and
+   `npm run pack:build-warsaw` before device download. Embedded demo route still
+   works offline without a pack.
 5. **Placeholder coordinates** — demo POI positions are approximate; they need
    surveying against real stop/GTFS data before they'll trigger accurately.
 
@@ -164,14 +171,36 @@ path reads Markdown from a downloaded Offline_Pack via Storage_Manager).
 
 ## Demo Content
 
-The demo route is **Warsaw Tram 22 — East** (placeholder content):
+Demo routes live in **`packages/ui/src/wiring/demoRoute.ts`** (geometry +
+metadata). Narrative copy is in **`packages/ui/src/wiring/sampleNarratives.ts`**.
 
-- Geofences + route in `packages/ui/src/screens/RouteSelectionScreen.tsx`
-- Narrative text in `packages/ui/src/wiring/sampleNarratives.ts`
-- POIs: Palace of Culture and Science, National Museum, National Stadium
+Currently one route: **Warsaw Tram 22 — East (summer)** — Praga → Plac Starynkiewicza:
+
+- POIs: PGE Narodowy, Powiśle, Plac Starynkiewicza (terminus until ~2 Aug)
+- Catalog pack: `packages/backend/data/packs/warsaw-tram-22-east/1.0.0/` (build via `npm run pack:build-warsaw`)
+- `RouteSelectionScreen`: Download Pack → Start Tour when catalog is up; embedded fallback if offline
 
 Coordinates and copy are approximate demo data — replace with surveyed POI
 positions and authored narratives (ideally GTFS-derived) before release.
+
+### Storage Option A (current)
+
+**`FileSystemPort`** abstracts disk I/O (`nodeFsPort` in tests, `expoFsPort` on
+device). **`openDeviceStorage()`** opens SQLite + pack store at
+`FileSystem.documentDirectory`. **`usePackManager`** lists the catalog (signature
+verified against the pinned SPKI), downloads packs via **`OfflinePackDownloader`**,
+and **`loadPackTour`** reads route/POIs/narratives from disk.
+
+Dev catalog private key is gitignored (`fixtures/dev/catalog-signing-key.json`);
+see `fixtures/dev/README.md`.
+
+Dev loop:
+
+```bash
+npm run pack:build-warsaw   # writes packages/backend/data/packs/...
+npm run backend:dev         # http://127.0.0.1:8080 — set CATALOG_BASE_URL to LAN IP on physical device
+npx expo prebuild --clean   # after adding MapLibre native dep
+```
 
 ### What happens on a real Warsaw tram right now
 
@@ -186,15 +215,13 @@ it, updates pause when the app backgrounds (limitation #1 above).
 
 ## Suggested Next Steps (highest value first)
 
-1. **Mount the map** — render `OfflineMap` on the playback screen with the
-   route polyline and current position (requires `@maplibre/maplibre-react-native` + tile pack).
-2. **Wire expo-sqlite** — connect Storage_Manager on device; load demo bundle from disk.
-3. **Real Warsaw content** — survey actual stop coordinates for a chosen line
-   and author narratives; move content out of the hardcoded screen into a
-   loadable Content_Bundle read via Storage_Manager.
-4. **Playback speed control** — 0.75–1.5× narration speed (Req 16.4).
+1. **Real vector tiles** — replace the placeholder `.pbf` in the dev pack with an
+   OSM corridor extract (tippecanoe / Planetiler) for Praga → Starynkiewicza.
+2. **GPS dot + route overlay** on `OfflineMap` (ShapeSource line + user position).
+3. **Real Warsaw content** — survey stop coordinates against GTFS; validate bundle with `bundle-validate`.
+4. **Deviation prompt UI** — engine hooks exist; classification not wired in `reduceActive`.
 5. **Re-enable deferred engine features** as needed (Standby, Dead Reckoning,
-   Deviation, entitlement gating) — reducer hooks already exist.
+   entitlement gating) — reducer hooks already exist.
 
 ---
 

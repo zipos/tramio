@@ -20,7 +20,8 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-import { stageAndRename } from '../fs';
+import { stageAndRename } from '../fsPort';
+import { createNodeFsPort } from '../nodeFsPort';
 import { parseGtfsFeed, type GtfsFeedSources } from './parser';
 import { GtfsFeed, type GtfsFeedMetadata } from './feed';
 import { GtfsParseError } from './types';
@@ -179,7 +180,7 @@ export async function replaceGtfsFeed(
   // `stageAndRename` `rm`s any prior contents of `finalDir` first, so the
   // old feed is replaced in one atomic rename of the new directory into
   // place.
-  await stageAndRename(staging, finalDir);
+  await stageAndRename(createNodeFsPort(), staging, finalDir);
 
   // Req 18.2: "replace the local copy atomically." Each city carries at
   // most one feed at a time; once the new feed is safely in place, remove

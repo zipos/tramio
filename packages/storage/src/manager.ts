@@ -11,22 +11,15 @@
 // in-memory better-sqlite3 driver. Both paths exercise identical
 // code below this line.
 
-import * as fs from 'node:fs/promises';
-
-import {
-  packDir,
-  packsRoot,
-  stagingDir,
-  type PackRef,
-  type PathLayout,
-} from './paths';
-import { stageAndRename, verifySha256, sha256Hex } from './fs';
+import { packDir, packsRoot, stagingDir, type PackRef, type PathLayout } from './paths';
+import { stageAndRename, verifySha256, sha256Hex, type FileSystemPort } from './fsPort';
 import type { SqliteDriver } from './sqlite';
 import { migrate, readCurrentVersion } from './migrations';
 
 export interface StorageManagerOptions {
   layout: PathLayout;
   driver: SqliteDriver;
+  fs: FileSystemPort;
 }
 
 /**
@@ -39,10 +32,12 @@ export interface StorageManagerOptions {
 export class StorageManager {
   public readonly layout: PathLayout;
   public readonly driver: SqliteDriver;
+  public readonly fs: FileSystemPort;
 
   private constructor(opts: StorageManagerOptions) {
     this.layout = opts.layout;
     this.driver = opts.driver;
+    this.fs = opts.fs;
   }
 
   /**
@@ -53,7 +48,7 @@ export class StorageManager {
    */
   static async open(opts: StorageManagerOptions): Promise<StorageManager> {
     const manager = new StorageManager(opts);
-    await fs.mkdir(packsRoot(opts.layout), { recursive: true });
+    await opts.fs.mkdir(packsRoot(opts.layout), { recursive: true });
     await migrate(opts.driver);
     return manager;
   }
@@ -79,17 +74,17 @@ export class StorageManager {
 
   /** Atomic stage+rename. See `./fs.ts` for the contract. */
   stageAndRename(stagingPath: string, finalPath: string): Promise<void> {
-    return stageAndRename(stagingPath, finalPath);
+    return stageAndRename(this.fs, stagingPath, finalPath);
   }
 
   /** Streaming SHA-256 verifier. See `./fs.ts` for the contract. */
   verifySha256(filePath: string, expectedHex: string): Promise<boolean> {
-    return verifySha256(filePath, expectedHex);
+    return verifySha256(this.fs, filePath, expectedHex);
   }
 
   /** Streaming SHA-256 hex digest of `filePath`. */
   sha256Hex(filePath: string): Promise<string> {
-    return sha256Hex(filePath);
+    return sha256Hex(this.fs, filePath);
   }
 
   /** Release the SQLite handle. Filesystem state is persistent. */

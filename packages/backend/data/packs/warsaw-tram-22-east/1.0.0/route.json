@@ -1,0 +1,25 @@
+{
+  "bundleId": "warsaw-tram-22-east",
+  "polyline": [
+    [52.244, 21.038],
+    [52.241, 21.032],
+    [52.237, 21.026],
+    [52.233, 21.02],
+    [52.2292, 21.0125]
+  ],
+  "stops": [
+    {
+      "id": "stop-stadion",
+      "gtfsStopId": "stadion",
+      "coord": [52.2394, 21.0455],
+      "scheduledOffsetSec": 0
+    },
+    {
+      "id": "stop-starynkiewicza",
+      "gtfsStopId": "starynkiewicza",
+      "coord": [52.2292, 21.0125],
+      "scheduledOffsetSec": 420
+    }
+  ],
+  "deviationCorridorMeters": 120
+}

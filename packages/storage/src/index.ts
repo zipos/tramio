@@ -23,6 +23,19 @@ export {
 export { stageAndRename, verifySha256, sha256Hex, SHA256_CHUNK_BYTES } from './fs';
 
 export {
+  createNodeFsPort,
+  type FileSystemPort,
+  type FileStat,
+  type WriteFromIterableResult,
+} from './fs';
+
+export { loadPackTour, type LoadedPackTour } from './packLoader';
+
+export { createFetchPackHttpClient, type FetchPackHttpClientOptions } from './fetchPackHttpClient';
+
+export { verifyManifestSignatureSpki } from './signatureVerify';
+
+export {
   betterSqliteDriver,
   type SqliteDriver,
   type SqliteParams,
@@ -51,6 +64,7 @@ export {
   sortByDependencyOrder,
   verifyManifestSignature,
   canonicalJsonStringify,
+  type ManifestVerifier,
   type DownloadError,
   type DownloadErrorKind,
   type DownloadResult,

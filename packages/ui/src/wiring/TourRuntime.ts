@@ -43,7 +43,7 @@ export class TourRuntime {
   private listeners = new Set<StateListener>();
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
   private locationAdapter: LocationAdapter | null = null;
-  private readonly narrativeResolver: NarrativeResolver;
+  private narrativeResolver: NarrativeResolver;
   private playbackSpeed: PlaybackSpeed = DEFAULT_PLAYBACK_SPEED;
   private playbackSpeedListeners = new Set<(speed: PlaybackSpeed) => void>();
 
@@ -93,6 +93,11 @@ export class TourRuntime {
   setPlaybackSpeed(speed: PlaybackSpeed): void {
     this.playbackSpeed = speed;
     for (const listener of this.playbackSpeedListeners) listener(speed);
+  }
+
+  /** Replace the narrative resolver (e.g. when starting a pack-backed tour). */
+  setNarrativeResolver(resolver: NarrativeResolver): void {
+    this.narrativeResolver = resolver;
   }
 
   subscribePlaybackSpeed(listener: (speed: PlaybackSpeed) => void): () => void {

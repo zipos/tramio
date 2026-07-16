@@ -1,16 +1,6 @@
 // Storage budget enforcement, LRU eviction, and storage UI data source.
-//
-// design.md "### Storage_Manager" owns the LRU access timestamps and
-// bytes-used tracking. This module layers budget policy on top of the
-// `lru_access` table and the `StorageManager` primitives.
-//
-// Validates: Requirements 19.1, 19.2, 19.3, 19.4, 19.5
-
-import * as fs from 'node:fs/promises';
-
 import type { StorageManager } from './manager';
 import type { PackRef } from './paths';
-import { packsRoot } from './paths';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -161,10 +151,10 @@ export class StorageBudget {
    * Remove a pack's LRU entry (called after eviction/deletion).
    */
   async unregisterPack(ref: PackRef): Promise<void> {
-    await this.storage.driver.run(
-      `DELETE FROM lru_access WHERE bundle_id = ? AND version = ?`,
-      [ref.bundleId, ref.version],
-    );
+    await this.storage.driver.run(`DELETE FROM lru_access WHERE bundle_id = ? AND version = ?`, [
+      ref.bundleId,
+      ref.version,
+    ]);
   }
 
   // -------------------------------------------------------------------------
@@ -247,16 +237,16 @@ export class StorageBudget {
   async evictPack(ref: PackRef): Promise<void> {
     // Remove from disk.
     const dir = this.storage.packDir(ref);
-    await fs.rm(dir, { recursive: true, force: true });
+    await this.storage.fs.rm(dir, { recursive: true, force: true });
 
     // Remove LRU tracking row.
     await this.unregisterPack(ref);
 
     // Remove pack_progress rows.
-    await this.storage.driver.run(
-      `DELETE FROM pack_progress WHERE bundle_id = ? AND version = ?`,
-      [ref.bundleId, ref.version],
-    );
+    await this.storage.driver.run(`DELETE FROM pack_progress WHERE bundle_id = ? AND version = ?`, [
+      ref.bundleId,
+      ref.version,
+    ]);
   }
 
   /**
@@ -270,9 +260,7 @@ export class StorageBudget {
     const rows = await this.storage.driver.all<{
       bundle_id: string;
       version: string;
-    }>(
-      `SELECT bundle_id, version FROM lru_access ORDER BY last_access_utc ASC`,
-    );
+    }>(`SELECT bundle_id, version FROM lru_access ORDER BY last_access_utc ASC`);
 
     for (const row of rows) {
       // Never evict the active-tour pack (Req 19.4).

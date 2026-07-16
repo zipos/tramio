@@ -18,6 +18,7 @@ import {
   type StorageBudgetConfig,
 } from './budget';
 import type { PackRef } from './paths';
+import { createNodeFsPort } from './fs';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -37,6 +38,7 @@ async function setup(opts?: {
   const storage = await StorageManager.open({
     layout: { docsDir: docs },
     driver: betterSqliteDriver(raw),
+    fs: createNodeFsPort(),
   });
 
   const config: StorageBudgetConfig = {

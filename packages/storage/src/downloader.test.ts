@@ -27,6 +27,7 @@ import {
   type SignedManifest,
 } from './downloader';
 import type { PackRef } from './paths';
+import { createNodeFsPort } from './fs';
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -120,7 +121,9 @@ class FakeHttpClient implements PackHttpClient {
     if (!buf) throw new Error(`asset not found: ${key}`);
 
     const interruptAt = this.interruptAt;
-    const self = this;
+    const clearInterrupt = (): void => {
+      this.interruptAt = null;
+    };
 
     return {
       async *[Symbol.asyncIterator]() {
@@ -132,7 +135,7 @@ class FakeHttpClient implements PackHttpClient {
             offset >= interruptAt.afterBytes
           ) {
             // Clear the interrupt so the next attempt succeeds.
-            self.interruptAt = null;
+            clearInterrupt();
             throw new Error(`simulated network interruption at byte ${offset}`);
           }
           yield buf.subarray(offset, Math.min(offset + chunkSize, buf.length));
@@ -161,6 +164,7 @@ async function setup(): Promise<TestContext> {
   const manager = await StorageManager.open({
     layout: { docsDir: docs },
     driver: betterSqliteDriver(raw),
+    fs: createNodeFsPort(),
   });
   const { publicKey, privateKey } = generateKeyPair();
   const http = new FakeHttpClient();
@@ -323,10 +327,7 @@ describe('OfflinePackDownloader.download — signature verification', () => {
   it('rejects a manifest with an invalid signature', async () => {
     const ctx = await setup();
     try {
-      const { asset: manifestAsset, content: manifestContent } = makeAsset(
-        'manifest.json',
-        '{}',
-      );
+      const { asset: manifestAsset, content: manifestContent } = makeAsset('manifest.json', '{}');
       const ref: PackRef = { bundleId: 'b', version: '1.0.0' };
 
       // Sign with a different key than the verification key.
@@ -375,10 +376,7 @@ describe('OfflinePackDownloader.download — SHA-256 mismatch', () => {
   it('fails when downloaded bytes do not match the lock file SHA', async () => {
     const ctx = await setup();
     try {
-      const { asset: manifestAsset, content: manifestContent } = makeAsset(
-        'manifest.json',
-        '{"ok":true}',
-      );
+      const { asset: manifestAsset } = makeAsset('manifest.json', '{"ok":true}');
       const ref: PackRef = { bundleId: 'b', version: '1.0.0' };
       const signed = buildSignedManifest(ctx.privateKey, 'b', '1.0.0', [manifestAsset]);
 
@@ -413,10 +411,7 @@ describe('OfflinePackDownloader.download — resume after interruption', () => {
         'route.json',
         '{"polyline":[]}',
       );
-      const { asset: poisAsset, content: poisContent } = makeAsset(
-        'pois.json',
-        '{"pois":[]}',
-      );
+      const { asset: poisAsset, content: poisContent } = makeAsset('pois.json', '{"pois":[]}');
 
       const ref: PackRef = { bundleId: 'resume', version: '1.0.0' };
       const assets = [manifestAsset, routeAsset, poisAsset];
@@ -450,9 +445,7 @@ describe('OfflinePackDownloader.download — resume after interruption', () => {
       expect(result2.ok).toBe(true);
 
       // manifest.json should NOT have been re-fetched (completed in first attempt).
-      const manifestFetches = ctx.http.fetchCount.get(
-        `resume@1.0.0/manifest.json`,
-      );
+      const manifestFetches = ctx.http.fetchCount.get(`resume@1.0.0/manifest.json`);
       expect(manifestFetches).toBeUndefined();
 
       // pois.json should NOT have been re-fetched (completed in first attempt).
@@ -573,7 +566,7 @@ describe('OfflinePackDownloader.download — pack_progress table state', () => {
     const ctx = await setup();
     try {
       const { asset: a1, content: c1 } = makeAsset('manifest.json', '{"v":1}');
-      const { asset: a2, content: c2 } = makeAsset('route.json', '{"r":1}');
+      const { asset: a2 } = makeAsset('route.json', '{"r":1}');
 
       const ref: PackRef = { bundleId: 'fail', version: '1.0.0' };
       const signed = buildSignedManifest(ctx.privateKey, 'fail', '1.0.0', [a1, a2]);
@@ -679,9 +672,7 @@ describe('canonicalJsonStringify', () => {
 
   it('handles nested objects and arrays', () => {
     const obj = { b: [3, 2, 1], a: { y: true, x: false } };
-    expect(canonicalJsonStringify(obj)).toBe(
-      '{"a":{"x":false,"y":true},"b":[3,2,1]}',
-    );
+    expect(canonicalJsonStringify(obj)).toBe('{"a":{"x":false,"y":true},"b":[3,2,1]}');
   });
 
   it('handles null and primitives', () => {

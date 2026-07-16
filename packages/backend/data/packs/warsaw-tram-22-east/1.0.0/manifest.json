@@ -1,0 +1,29 @@
+{
+  "bundleId": "warsaw-tram-22-east",
+  "version": "1.0.0",
+  "city": {
+    "id": "warsaw",
+    "country": "PL"
+  },
+  "transitLine": {
+    "gtfsRouteId": "22",
+    "direction": "east (summer)",
+    "agency": "ZTM"
+  },
+  "languages": ["pl", "en"],
+  "defaultLanguage": "pl",
+  "minAppVersion": "0.1.0",
+  "deadReckoning": {
+    "permitted": true,
+    "maxLeadSeconds": 30
+  },
+  "standbyTracks": [],
+  "attribution": [
+    {
+      "kind": "osm"
+    }
+  ],
+  "checksumAlgorithm": "sha256",
+  "validUntil": "2026-08-02",
+  "notes": "Shortened route — terminates at Plac Starynkiewicza until track works complete."
+}

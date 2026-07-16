@@ -6,9 +6,9 @@
 // fixes delivered by expo-location, which IS autolinked.
 //
 // Responsibilities:
-//   - Request foreground (+ background) location permission.
-//   - Prefer TaskManager background location updates so fixes keep flowing
-//     when the app is pocketed; fall back to a foreground watch otherwise.
+//   - Request foreground (+ optional background) location permission.
+//   - Always start a foreground watch so the tour works after the first grant.
+//   - Optionally upgrade to TaskManager background updates when allowed.
 //   - Feed each raw fix through `step()` (accuracy gate, spike rejection,
 //     smoothing, dwell, direction filter).
 //   - Emit `LocationAccepted` and `GeofenceDwell` engine events.
@@ -63,24 +63,11 @@ export class LocationAdapter {
     this.active = true;
     bindLocationSession(this.route, this.geofences, this.events, () => this.active);
 
-    const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
-    if (bgStatus === Location.PermissionStatus.GRANTED) {
-      try {
-        await startBackgroundLocationUpdates();
-        return;
-      } catch {
-        // Fall through to foreground-only watch.
-      }
-    }
+    // Foreground watch first — reliable on all platforms and permission states.
+    await this.startForegroundWatch();
 
-    this.watch = await Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.High,
-        timeInterval: 1000,
-        distanceInterval: 1,
-      },
-      (loc) => ingestLocationFix(loc),
-    );
+    // Background is optional; never tear down a working foreground watch on failure.
+    await this.tryEnableBackgroundUpdates();
   }
 
   /** Stop watching and release the subscription. */
@@ -92,5 +79,38 @@ export class LocationAdapter {
     }
     void stopBackgroundLocationUpdates().catch(() => undefined);
     unbindLocationSession();
+  }
+
+  private async startForegroundWatch(): Promise<void> {
+    if (this.watch) return;
+    this.watch = await Location.watchPositionAsync(
+      {
+        accuracy: Location.Accuracy.High,
+        timeInterval: 1000,
+        distanceInterval: 1,
+      },
+      (loc) => ingestLocationFix(loc),
+    );
+  }
+
+  private async tryEnableBackgroundUpdates(): Promise<void> {
+    try {
+      let bgStatus = (await Location.getBackgroundPermissionsAsync()).status;
+      if (bgStatus !== Location.PermissionStatus.GRANTED) {
+        bgStatus = (await Location.requestBackgroundPermissionsAsync()).status;
+      }
+      if (bgStatus !== Location.PermissionStatus.GRANTED) {
+        return;
+      }
+
+      await startBackgroundLocationUpdates();
+      if (this.watch) {
+        this.watch.remove();
+        this.watch = null;
+      }
+    } catch {
+      // Android OEM FGS / TaskManager can fail right after the settings sheet;
+      // foreground watch keeps the tour running.
+    }
   }
 }

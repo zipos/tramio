@@ -5,8 +5,8 @@ TypeScript app targeting iOS and Android.
 
 > **Portfolio demo.** Spec-driven MVP showcasing monorepo architecture, a pure
 > tour engine with property tests, Expo-module runtime wiring, and offline-first
-> design. Licensed under [Apache-2.0](LICENSE). See [HANDOFF.md](HANDOFF.md) for
-> engineering context.
+> design. Licensed under [AGPL-3.0-or-later](LICENSE) (strong copyleft — derivatives
+> must stay open source). See [HANDOFF.md](HANDOFF.md) for engineering context.
 
 ## Layout
 
@@ -77,4 +77,25 @@ following entries flow from `app.config.ts` into the generated manifests:
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+**GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)** — see
+[LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+### What that means (plain language)
+
+- You may use, study, modify, and **redistribute** this code.
+- If you **distribute** the app or a modified version (e.g. ship an APK/IPA, or
+  publish a fork), you must **release your corresponding source** under a
+  compatible open-source license (typically AGPL-3.0).
+- If you **run a modified version** of the server/backend as a **network service**
+  that users interact with, AGPL also requires making the modified server source
+  available to those users.
+- **Private use** without distributing binaries or offering a modified network
+  service to others is generally allowed without publishing your changes — but
+  consult the full license or a lawyer for your situation.
+
+This is stricter than Apache-2.0: proprietary closed-source products cannot
+legally incorporate Tramio code without a separate license from the copyright
+holder.
+
+**Not legal advice.** For commercial or closed-source use, contact the copyright
+holder for a separate license.

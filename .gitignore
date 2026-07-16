@@ -34,6 +34,10 @@ yarn-error.*
 .env
 .env*.local
 
+# Dev catalog Ed25519 private key (never commit). Public key stays in fixtures/dev/.
+# Generate: node tooling/generate-dev-catalog-key.mjs && npm run pack:build-warsaw
+fixtures/dev/catalog-signing-key.json
+
 # typescript
 *.tsbuildinfo
 

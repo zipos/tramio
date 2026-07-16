@@ -1,28 +1,56 @@
 // App.tsx — Tramio entry point.
-//
-// Wires the engine hook to conditional screen rendering:
-//   - Idle → RouteSelectionScreen
-//   - Active/Standby/DeadReckoning/Deviation → TourPlaybackScreen
-//   - Ended → brief "Tour ended" message, then returns to Idle
 
 import type { ReactElement } from 'react';
+import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import type { StartTourConfig } from './packages/engine/src';
+import type { PackRef } from './packages/storage/src/paths';
 import { useTourEngine } from './packages/ui/src/wiring/useTourEngine';
+import { findDemoRoute } from './packages/ui/src/wiring/demoRoute';
 import { RouteSelectionScreen } from './packages/ui/src/screens/RouteSelectionScreen';
-import { TourPlaybackScreen } from './packages/ui/src/screens/TourPlaybackScreen';
+import {
+  TourPlaybackScreen,
+  type MapPlaybackContext,
+} from './packages/ui/src/screens/TourPlaybackScreen';
 
 export default function App(): ReactElement {
   const { state, caption, playbackSpeed, setPlaybackSpeed, startTour, endTour } = useTourEngine();
+  const [activeRouteTitle, setActiveRouteTitle] = useState<string | null>(null);
+  const [mapContext, setMapContext] = useState<MapPlaybackContext | null>(null);
 
-  // Show "Tour ended" briefly — the engine auto-transitions Ended → Idle
-  // via the release-timeout timer (2s), so we just render the message
-  // while in the Ended phase.
+  const handleStartTour = (
+    config: StartTourConfig,
+    meta?: {
+      title?: string;
+      docsDir?: string;
+      pack?: PackRef;
+      narratives?: Readonly<Record<string, string>>;
+    },
+  ) => {
+    setActiveRouteTitle(meta?.title ?? findDemoRoute(config.bundle.bundleId)?.title ?? null);
+    if (meta?.docsDir && meta?.pack) {
+      const center = config.route[0];
+      setMapContext({
+        docsDir: meta.docsDir,
+        tilePack: meta.pack,
+        ...(center ? { initialCenter: center } : {}),
+      });
+    } else {
+      setMapContext(null);
+    }
+    startTour(config, meta?.narratives ? { narratives: meta.narratives } : undefined);
+  };
+
+  const handleEndTour = () => {
+    setMapContext(null);
+    endTour();
+  };
 
   const content = (() => {
     switch (state.phase) {
       case 'Idle':
-        return <RouteSelectionScreen onStartTour={startTour} />;
+        return <RouteSelectionScreen onStartTour={handleStartTour} />;
       case 'Active':
       case 'Standby':
       case 'DeadReckoning':
@@ -30,10 +58,12 @@ export default function App(): ReactElement {
         return (
           <TourPlaybackScreen
             state={state}
+            routeTitle={activeRouteTitle}
             caption={caption}
+            mapContext={mapContext}
             playbackSpeed={playbackSpeed}
             onPlaybackSpeedChange={setPlaybackSpeed}
-            onEndTour={endTour}
+            onEndTour={handleEndTour}
           />
         );
       case 'Ended':

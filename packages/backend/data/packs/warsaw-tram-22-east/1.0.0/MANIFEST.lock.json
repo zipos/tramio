@@ -1,0 +1,49 @@
+{
+  "bundleId": "warsaw-tram-22-east",
+  "version": "1.0.0",
+  "assets": [
+    {
+      "path": "manifest.json",
+      "sizeBytes": 630,
+      "sha256": "2442592f21e495857f5dc49c6d38ea8c25b96e382296b76763ca67f5333f8a60",
+      "protected": false
+    },
+    {
+      "path": "route.json",
+      "sizeBytes": 650,
+      "sha256": "bd01917685f2e0d75308b3dd0527bc15b5d66468a32f9aaeb877c651a058d042",
+      "protected": false
+    },
+    {
+      "path": "pois.json",
+      "sizeBytes": 1143,
+      "sha256": "7ad458869e4d0f97e50b7c3951f3ba237b3f58b917667ea0b65d13c892094dda",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-stadion-narodowy.pl.md",
+      "sizeBytes": 124,
+      "sha256": "3cc1bb60325164eac4cfeaaa18a44bb7c09eede1fe38812c0ea1dba8c36365f9",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-powisle.pl.md",
+      "sizeBytes": 84,
+      "sha256": "ed1fb13e062bcf480ba938671157528d42477d48f3e1ae0dd0ebb4cb1135fe5d",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-starynkiewicza.pl.md",
+      "sizeBytes": 138,
+      "sha256": "1a9b0bf046ca710685dd5456fd2152fd17eaf16d5e2c88fe08bc993797bedb42",
+      "protected": false
+    },
+    {
+      "path": "tiles/14/9000/5000.pbf",
+      "sizeBytes": 12,
+      "sha256": "09f0cb2094a6d7feb42229a19c6341bb23bb2d0cdd7be3805d8203d1961df87e",
+      "protected": false
+    }
+  ],
+  "createdAt": "2026-07-01T19:34:19.758Z"
+}

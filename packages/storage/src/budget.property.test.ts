@@ -25,12 +25,9 @@ import Database from 'better-sqlite3';
 
 import { StorageManager } from './manager';
 import { betterSqliteDriver } from './sqlite';
-import {
-  StorageBudget,
-  type ActiveTourProvider,
-  type StorageBudgetConfig,
-} from './budget';
+import { StorageBudget, type ActiveTourProvider, type StorageBudgetConfig } from './budget';
 import type { PackRef } from './paths';
+import { createNodeFsPort } from './fs';
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -51,6 +48,7 @@ async function setup(opts: {
   const storage = await StorageManager.open({
     layout: { docsDir: docs },
     driver: betterSqliteDriver(raw),
+    fs: createNodeFsPort(),
   });
 
   const budget = new StorageBudget({
@@ -77,11 +75,6 @@ async function createFakePackDir(storage: StorageManager, ref: PackRef): Promise
 // ---------------------------------------------------------------------------
 // Generators
 // ---------------------------------------------------------------------------
-
-/** Generate a valid pack reference with a unique id. */
-function arbPackRef(index: number): fc.Arbitrary<PackRef> {
-  return fc.constant({ bundleId: `pack-${index}`, version: '1.0.0' });
-}
 
 /** A pack with its size in bytes (between 10 MB and 500 MB). */
 interface PackWithSize {
@@ -135,8 +128,7 @@ describe('Property 17: Storage budget policy is correct under add and evict', ()
           ),
         ),
         async ([packs, budgetBytes, newPackSize, activeIdx]) => {
-          const activePack: PackRef | null =
-            activeIdx >= 0 ? packs[activeIdx]!.ref : null;
+          const activePack: PackRef | null = activeIdx >= 0 ? packs[activeIdx]!.ref : null;
 
           const ctx = await setup({
             config: { budgetBytes, evictionMode: 'auto' },
@@ -240,9 +232,7 @@ describe('Property 17: Storage budget policy is correct under add and evict', ()
             // Regardless of outcome, the active pack must still be registered.
             const summary = await ctx.budget.getUsageSummary();
             const activeStillPresent = summary.packs.some(
-              (p) =>
-                p.bundleId === activePack.bundleId &&
-                p.version === activePack.version,
+              (p) => p.bundleId === activePack.bundleId && p.version === activePack.version,
             );
             if (!activeStillPresent) {
               throw new Error(
@@ -268,9 +258,7 @@ describe('Property 17: Storage budget policy is correct under add and evict', ()
             fc.tuple(
               fc.constant(packs),
               // Budget tight enough to force at least one eviction.
-              fc.constant(
-                packs.reduce((sum, p) => sum + p.sizeBytes, 0) - packs[0]!.sizeBytes + 1,
-              ),
+              fc.constant(packs.reduce((sum, p) => sum + p.sizeBytes, 0) - packs[0]!.sizeBytes + 1),
               // New pack size that will trigger eviction.
               fc.constant(packs[0]!.sizeBytes + 1),
             ),
@@ -306,8 +294,7 @@ describe('Property 17: Storage budget policy is correct under add and evict', ()
               let lastLruIdx = -1;
               for (const evicted of result.evictedPacks) {
                 const idx = lruOrder.findIndex(
-                  (r) =>
-                    r.bundleId === evicted.bundleId && r.version === evicted.version,
+                  (r) => r.bundleId === evicted.bundleId && r.version === evicted.version,
                 );
                 if (idx === -1) {
                   throw new Error(

@@ -8,6 +8,7 @@
 // The task must be defined at module load time (imported from index.ts before
 // the app root component).
 
+import { InteractionManager, Platform } from 'react-native';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import {
@@ -19,6 +20,8 @@ import {
   type LatLng,
   type PositionUpdate,
 } from '../../../engine/src';
+
+import { ensureAndroidPostNotificationsPermission } from './androidPermissions';
 
 export interface LocationAdapterEvents {
   onAccepted: (update: {
@@ -66,6 +69,10 @@ export function unbindLocationSession(): void {
   session = null;
 }
 
+function runOnMainThread(fn: () => void): void {
+  InteractionManager.runAfterInteractions(fn);
+}
+
 function ingestLocation(loc: Location.LocationObject): void {
   if (session === null || !session.isActive()) return;
 
@@ -82,19 +89,22 @@ function ingestLocation(loc: Location.LocationObject): void {
 
   session.pipeline = out.nextState;
 
-  session.events.onAccepted({
-    ts: raw.ts,
-    coord: raw.coord,
-    accuracyM: raw.accuracyM,
-    smoothed: out.accepted.smoothed,
-    alongRouteM: out.accepted.alongRouteM,
-    ...(raw.speedMps != null ? { speedMps: raw.speedMps } : {}),
-    ...(raw.headingDeg != null ? { headingDeg: raw.headingDeg } : {}),
+  const events = session.events;
+  runOnMainThread(() => {
+    if (session === null || !session.isActive()) return;
+    events.onAccepted({
+      ts: raw.ts,
+      coord: raw.coord,
+      accuracyM: raw.accuracyM,
+      smoothed: out.accepted.smoothed,
+      alongRouteM: out.accepted.alongRouteM,
+      ...(raw.speedMps != null ? { speedMps: raw.speedMps } : {}),
+      ...(raw.headingDeg != null ? { headingDeg: raw.headingDeg } : {}),
+    });
+    if (out.fire !== undefined) {
+      events.onGeofenceDwell(out.fire);
+    }
   });
-
-  if (out.fire !== undefined) {
-    session.events.onGeofenceDwell(out.fire);
-  }
 }
 
 /** Ingest a single location fix through the bound session pipeline. */
@@ -119,22 +129,35 @@ export function ensureLocationTaskDefined(): void {
 export async function startBackgroundLocationUpdates(): Promise<void> {
   ensureLocationTaskDefined();
 
+  if (Platform.OS === 'android') {
+    const notificationsOk = await ensureAndroidPostNotificationsPermission();
+    if (!notificationsOk) {
+      throw new Error('POST_NOTIFICATIONS required for background location on Android');
+    }
+  }
+
   const alreadyRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
   if (alreadyRunning) {
     await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
   }
 
-  await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
+  const options: Location.LocationTaskOptions = {
     accuracy: Location.Accuracy.High,
     timeInterval: 1000,
     distanceInterval: 1,
-    showsBackgroundLocationIndicator: true,
     pausesUpdatesAutomatically: false,
     foregroundService: {
       notificationTitle: 'Tramio tour in progress',
       notificationBody: 'Playing landmark narration along your route',
+      notificationColor: '#2563eb',
     },
-  });
+  };
+
+  if (Platform.OS === 'ios') {
+    options.showsBackgroundLocationIndicator = true;
+  }
+
+  await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, options);
 }
 
 export async function stopBackgroundLocationUpdates(): Promise<void> {

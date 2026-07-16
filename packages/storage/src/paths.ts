@@ -14,7 +14,7 @@
 // @see design.md "Storage_Manager"
 // @see Requirements 3.1, 3.5
 
-import * as path from 'node:path';
+import { pathJoin } from './pathJoin';
 
 /**
  * Identifier of an Offline_Pack on disk. `bundleId` and `version` are
@@ -65,7 +65,7 @@ export interface PathLayout {
 
 /** Root of the pack store: `${docsDir}/packs/`. */
 export function packsRoot(layout: PathLayout): string {
-  return path.join(layout.docsDir, 'packs');
+  return pathJoin(layout.docsDir, 'packs');
 }
 
 /**
@@ -76,7 +76,7 @@ export function packsRoot(layout: PathLayout): string {
 export function packDir(layout: PathLayout, ref: PackRef): string {
   assertSafeSegment('bundleId', ref.bundleId);
   assertSafeSegment('version', ref.version);
-  return path.join(packsRoot(layout), ref.bundleId, ref.version);
+  return pathJoin(packsRoot(layout), ref.bundleId, ref.version);
 }
 
 /**
@@ -92,5 +92,5 @@ export function packDir(layout: PathLayout, ref: PackRef): string {
 export function stagingDir(layout: PathLayout, ref: PackRef): string {
   assertSafeSegment('bundleId', ref.bundleId);
   assertSafeSegment('version', ref.version);
-  return path.join(packsRoot(layout), ref.bundleId, `${ref.version}.staging`);
+  return pathJoin(packsRoot(layout), ref.bundleId, `${ref.version}.staging`);
 }

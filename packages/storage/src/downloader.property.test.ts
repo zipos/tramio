@@ -34,6 +34,7 @@ import {
   type SignedManifest,
 } from './downloader';
 import type { PackRef } from './paths';
+import { createNodeFsPort } from './fs';
 
 // ---------------------------------------------------------------------------
 // Test helpers (mirrors downloader.test.ts patterns)
@@ -169,6 +170,7 @@ async function setup(): Promise<TestContext> {
   const manager = await StorageManager.open({
     layout: { docsDir: docs },
     driver: betterSqliteDriver(raw),
+    fs: createNodeFsPort(),
   });
   const { publicKey, privateKey } = generateKeyPair();
   const http = new FakeHttpClient();
@@ -188,16 +190,6 @@ async function teardown(ctx: TestContext): Promise<void> {
 // ---------------------------------------------------------------------------
 // Generators
 // ---------------------------------------------------------------------------
-
-/** Asset category names used to build realistic pack-relative paths. */
-const ASSET_CATEGORIES = [
-  { prefix: 'manifest.json', singleton: true },
-  { prefix: 'route.json', singleton: true },
-  { prefix: 'pois.json', singleton: true },
-  { prefix: 'narratives/', singleton: false },
-  { prefix: 'audio/', singleton: false },
-  { prefix: 'tiles/', singleton: false },
-] as const;
 
 /**
  * Generate a realistic pack asset path. The downloader sorts by dependency
@@ -221,21 +213,17 @@ function arbAssetPath(index: number): string {
  * Arbitrary for a generated pack: produces an array of (assetPath, content)
  * pairs with 3–8 assets (always includes the 3 singletons).
  */
-const arbPack = fc
-  .integer({ min: 3, max: 8 })
-  .chain((numAssets) =>
-    fc.tuple(
-      ...Array.from({ length: numAssets }, (_, i) =>
-        fc
-          .uint8Array({ minLength: 16, maxLength: 2048 })
-          .map((bytes) => ({
-            path: arbAssetPath(i),
-            content: Buffer.from(bytes),
-            protected: i >= 3 && arbAssetPath(i).endsWith('.enc'),
-          })),
-      ),
+const arbPack = fc.integer({ min: 3, max: 8 }).chain((numAssets) =>
+  fc.tuple(
+    ...Array.from({ length: numAssets }, (_, i) =>
+      fc.uint8Array({ minLength: 16, maxLength: 2048 }).map((bytes) => ({
+        path: arbAssetPath(i),
+        content: Buffer.from(bytes),
+        protected: i >= 3 && arbAssetPath(i).endsWith('.enc'),
+      })),
     ),
-  );
+  ),
+);
 
 /**
  * Arbitrary for the interruption point: an index into the asset array
@@ -372,10 +360,7 @@ describe('Property 14: Offline_Pack download/resume round trip preserves content
             const finalDir = ctx.manager.packDir(ref);
             for (const a of packAssets) {
               const onDisk = await fs.readFile(path.join(finalDir, a.path));
-              const expectedSha = crypto
-                .createHash('sha256')
-                .update(a.content)
-                .digest('hex');
+              const expectedSha = crypto.createHash('sha256').update(a.content).digest('hex');
               const actualSha = crypto.createHash('sha256').update(onDisk).digest('hex');
               if (actualSha !== expectedSha) {
                 throw new Error(
@@ -401,13 +386,15 @@ describe('Property 14: Offline_Pack download/resume round trip preserves content
   it('resume does not re-fetch assets that are already complete', async () => {
     await fc.assert(
       fc.asyncProperty(
-        arbPack.filter((assets) => assets.length >= 4).chain((packAssets) =>
-          fc.tuple(
-            fc.constant(packAssets),
-            // Interrupt at an index >= 1 so at least one asset completes before the failure.
-            fc.integer({ min: 1, max: packAssets.length - 1 }),
+        arbPack
+          .filter((assets) => assets.length >= 4)
+          .chain((packAssets) =>
+            fc.tuple(
+              fc.constant(packAssets),
+              // Interrupt at an index >= 1 so at least one asset completes before the failure.
+              fc.integer({ min: 1, max: packAssets.length - 1 }),
+            ),
           ),
-        ),
         async ([packAssets, interruptIdx]) => {
           const ctx = await setup();
           try {
@@ -461,9 +448,7 @@ describe('Property 14: Offline_Pack download/resume round trip preserves content
 
             const result2 = await ctx.downloader.download(bundleId, version);
             if (!result2.ok) {
-              throw new Error(
-                `Resume failed: ${result2.errors.map((e) => e.message).join(', ')}`,
-              );
+              throw new Error(`Resume failed: ${result2.errors.map((e) => e.message).join(', ')}`);
             }
 
             // Verify: assets that were complete before the resume should NOT
@@ -490,12 +475,11 @@ describe('Property 14: Offline_Pack download/resume round trip preserves content
   it('a pack is not startable until all assets are complete', async () => {
     await fc.assert(
       fc.asyncProperty(
-        arbPack.filter((assets) => assets.length >= 4).chain((packAssets) =>
-          fc.tuple(
-            fc.constant(packAssets),
-            fc.integer({ min: 1, max: packAssets.length - 1 }),
+        arbPack
+          .filter((assets) => assets.length >= 4)
+          .chain((packAssets) =>
+            fc.tuple(fc.constant(packAssets), fc.integer({ min: 1, max: packAssets.length - 1 })),
           ),
-        ),
         async ([packAssets, interruptIdx]) => {
           const ctx = await setup();
           try {

@@ -12,6 +12,7 @@ import Database from 'better-sqlite3';
 import { StorageManager } from './manager';
 import { betterSqliteDriver } from './sqlite';
 import { SCHEMA_VERSION } from './schema';
+import { createNodeFsPort } from './fs';
 
 interface CountRow {
   n: number;
@@ -34,6 +35,7 @@ async function openManager(): Promise<{
   const manager = await StorageManager.open({
     layout: { docsDir: docs },
     driver: betterSqliteDriver(raw),
+    fs: createNodeFsPort(),
   });
   return { manager, docs, raw };
 }
@@ -73,9 +75,7 @@ describe('StorageManager.open', () => {
     const { manager, docs } = await openManager();
     try {
       const ref = { bundleId: 'wroclaw-tram-7', version: '1.4.2' };
-      expect(manager.packDir(ref)).toBe(
-        path.join(docs, 'packs', 'wroclaw-tram-7', '1.4.2'),
-      );
+      expect(manager.packDir(ref)).toBe(path.join(docs, 'packs', 'wroclaw-tram-7', '1.4.2'));
       expect(manager.stagingDir(ref)).toBe(
         path.join(docs, 'packs', 'wroclaw-tram-7', '1.4.2.staging'),
       );
@@ -157,11 +157,13 @@ describe('StorageManager — SQLite tables are usable through the driver', () =>
   it('records pack_progress rows and reads them back', async () => {
     const { manager, docs, raw } = await openManager();
     try {
-      raw.prepare(
-        `INSERT INTO pack_progress
+      raw
+        .prepare(
+          `INSERT INTO pack_progress
            (bundle_id, version, asset_path, status, bytes_total, bytes_done, sha256, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run('b', '1', 'manifest.json', 'partial', 1820, 900, null, Date.now());
+        )
+        .run('b', '1', 'manifest.json', 'partial', 1820, 900, null, Date.now());
 
       const rows = await manager.driver.all<PackProgressRow>(
         `SELECT bundle_id, version, asset_path, status FROM pack_progress`,
@@ -205,6 +207,7 @@ describe('StorageManager — SQLite tables are usable through the driver', () =>
       const m1 = await StorageManager.open({
         layout: { docsDir: docs },
         driver: betterSqliteDriver(raw),
+        fs: createNodeFsPort(),
       });
       // Insert a sentinel row.
       await m1.driver.run(
@@ -217,6 +220,7 @@ describe('StorageManager — SQLite tables are usable through the driver', () =>
       const m2 = await StorageManager.open({
         layout: { docsDir: docs },
         driver: betterSqliteDriver(raw),
+        fs: createNodeFsPort(),
       });
       const count = (await m2.driver.get<CountRow>(
         `SELECT COUNT(*) AS n FROM device_id`,

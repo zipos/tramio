@@ -58,6 +58,10 @@ const config = {
       // App Transport Security: catalog/entitlement endpoints are HTTPS-only.
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: false,
+        NSExceptionDomains: {
+          localhost: { NSExceptionAllowsInsecureHTTPLoads: true },
+          '127.0.0.1': { NSExceptionAllowsInsecureHTTPLoads: true },
+        },
       },
     },
   },
@@ -65,6 +69,10 @@ const config = {
   android: {
     package: ANDROID_PACKAGE,
     predictiveBackGestureEnabled: false,
+    // Cleartext only for local/dev LAN catalog. Production EAS builds must use HTTPS.
+    // Override: CATALOG_ALLOW_CLEARTEXT=1. Force off: EAS_BUILD_PROFILE=production.
+    usesCleartextTraffic:
+      process.env.CATALOG_ALLOW_CLEARTEXT === '1' || process.env.EAS_BUILD_PROFILE !== 'production',
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
       backgroundColor: '#ffffff',
@@ -94,6 +102,21 @@ const config = {
 
   plugins: [
     'expo-sqlite',
+    'expo-file-system',
+    [
+      'expo-location',
+      {
+        locationWhenInUsePermission:
+          'Tramio uses your location while you ride to trigger landmark narratives along your transit route.',
+        locationAlwaysAndWhenInUsePermission:
+          'Tramio keeps narrating in the background while your phone is locked. Location is used only during an active tour.',
+        locationAlwaysPermission:
+          'Tramio keeps narrating in the background while your phone is locked. Location is used only during an active tour.',
+        isAndroidBackgroundLocationEnabled: true,
+        isAndroidForegroundServiceEnabled: true,
+      },
+    ],
+    '@maplibre/maplibre-react-native',
     // Background location dwell delivery while the tour runs pocketed.
     'expo-task-manager',
     // Pin Android compile/target SDKs (API 37 = Android 17) and iOS deployment target for Expo SDK 57.
@@ -114,6 +137,7 @@ const config = {
     // Location_Service + Audio_Service to keep the tour alive in the
     // background (Req 12.1, 12.2).
     './plugins/withTramioForegroundService',
+    './plugins/withAndroidLocalProperties',
   ],
 
   experiments: {
@@ -121,9 +145,8 @@ const config = {
   },
 
   extra: {
-    // Backend base URLs are resolved at runtime from environment-based config
-    // (`.env.{profile}`) rather than hard-coded here. See design.md
-    // "Branding module > Runtime configuration".
+    // Backend base URLs — override in dev with your machine IP (e.g. http://192.168.1.10:8080).
+    catalogBaseUrl: process.env.CATALOG_BASE_URL ?? 'http://127.0.0.1:8080',
     eas: {
       projectId: 'TBD-eas-project-id',
     },
