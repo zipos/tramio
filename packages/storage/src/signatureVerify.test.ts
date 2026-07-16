@@ -1,5 +1,13 @@
 jest.mock('@noble/ed25519', () => ({
   verifyAsync: jest.fn(async () => true),
+  hashes: {
+    sha512: jest.fn(),
+    sha512Async: jest.fn(),
+  },
+}));
+
+jest.mock('@noble/hashes/sha512', () => ({
+  sha512: jest.fn((_msg: Uint8Array) => new Uint8Array(64).fill(0)),
 }));
 
 import * as ed from '@noble/ed25519';

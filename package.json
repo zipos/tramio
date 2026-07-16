@@ -27,6 +27,7 @@
     "@fastify/sensible": "^6.0.4",
     "@maplibre/maplibre-react-native": "^10.4.2",
     "@noble/ed25519": "^3.1.0",
+    "@noble/hashes": "^1.8.0",
     "expo": "^57.0.0",
     "expo-build-properties": "~57.0.2",
     "expo-constants": "~57.0.0",

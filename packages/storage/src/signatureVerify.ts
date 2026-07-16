@@ -1,8 +1,14 @@
 // Cross-platform Ed25519 manifest signature verification (device + tests).
 
 import * as ed from '@noble/ed25519';
+import { sha512 } from '@noble/hashes/sha512';
 
 import { canonicalJsonStringify } from './downloader-core';
+
+// React Native has no WebCrypto SHA-512; noble-ed25519 requires an explicit hash.
+ed.hashes.sha512 = sha512 as typeof ed.hashes.sha512;
+ed.hashes.sha512Async = ((message: Uint8Array) =>
+  Promise.resolve(sha512(message))) as typeof ed.hashes.sha512Async;
 
 function base64urlDecode(s: string): Uint8Array {
   const padLen = s.length % 4 === 0 ? 0 : 4 - (s.length % 4);

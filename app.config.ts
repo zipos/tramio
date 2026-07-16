@@ -138,6 +138,8 @@ const config = {
     // background (Req 12.1, 12.2).
     './plugins/withTramioForegroundService',
     './plugins/withAndroidLocalProperties',
+    // Xcode 27 / iOS 27 SDK requires UIScene lifecycle (TN3187). Remove when Expo ships it.
+    './plugins/withIosSceneLifecycle',
   ],
 
   experiments: {
