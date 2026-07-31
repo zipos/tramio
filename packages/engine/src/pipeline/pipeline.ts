@@ -118,6 +118,24 @@ export function isRejected(o: PipelineOutput): o is PipelineRejected {
  * forwarded as `EngineEvent.kind === 'LocationRejected'` without the JS
  * reducer needing to know whether the filter ran on-device or in JS.
  */
+/**
+ * Maximum displacement (meters) allowed for a non-increasing timestamp.
+ *
+ * Android's FusedLocationProvider can batch fixes and deliver them with
+ * equal or out-of-order timestamps. When dtSec <= 0, any non-trivial
+ * displacement is physically impossible (you cannot move 5 km in zero or
+ * negative time). However, GPS jitter on a genuinely duplicated timestamp
+ * may shift the coordinate by a few metres, so we allow a small tolerance
+ * rather than rejecting all same-timestamp fixes outright.
+ *
+ * 5 m was chosen because civilian GPS horizontal accuracy at the 95th
+ * percentile is ~3–5 m under open sky. A duplicated fix with >5 m
+ * displacement is overwhelmingly a spurious almanac fix, not jitter.
+ *
+ * @see Requirement 5.2 (spike rejection)
+ */
+export const MAX_DISPLACEMENT_ZERO_DT_M = 5;
+
 export function prefilter(
   raw: PositionUpdate,
   prevAccepted: PositionUpdate | undefined,
@@ -126,8 +144,17 @@ export function prefilter(
   if (prevAccepted) {
     const dtSec = (raw.ts - prevAccepted.ts) / 1000;
     if (dtSec > 0) {
+      // Strictly increasing timestamp: classic speed-based spike check.
       const distM = haversine(prevAccepted.coord, raw.coord);
       if (distM / dtSec > MAX_SPEED_MPS) return 'spike';
+    } else {
+      // Non-increasing timestamp (equal or out-of-order): displacement-based
+      // spike check. A non-trivial jump is physically impossible when dt <= 0
+      // and indicates a spurious batched fix (e.g. stale almanac coordinate).
+      // Allow small jitter (<=5 m) on genuinely duplicated timestamps.
+      // @see Requirement 5.2
+      const distM = haversine(prevAccepted.coord, raw.coord);
+      if (distM > MAX_DISPLACEMENT_ZERO_DT_M) return 'spike';
     }
   }
   return null;

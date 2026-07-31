@@ -42,9 +42,16 @@ jest.mock('react-native', () => {
     NativeEventEmitter: class {
       addListener(eventName: string, cb: (payload: unknown) => void) {
         let set = listeners.get(eventName);
-        if (!set) { set = new Set(); listeners.set(eventName, set); }
+        if (!set) {
+          set = new Set();
+          listeners.set(eventName, set);
+        }
         set.add(cb);
-        return { remove: () => { listeners.get(eventName)?.delete(cb); } };
+        return {
+          remove: () => {
+            listeners.get(eventName)?.delete(cb);
+          },
+        };
       }
     },
   };
@@ -160,23 +167,26 @@ describeDevice('Location_Service — iOS device smoke tests', () => {
     setMode('idle');
   });
 
-  deviceIt('delivers onAccepted events when mode is tour-approach and accuracy is good', async () => {
-    // Validates: Req 5.1 (accuracy gate passes updates <= 50 m)
-    // Validates: Req 12.2 (geofence events delivered)
-    //
-    // Precondition: inject a simulated location with accuracy < 50 m
-    // via Xcode GPX or the simulator's location simulation.
-    setMode('tour-approach');
+  deviceIt(
+    'delivers onAccepted events when mode is tour-approach and accuracy is good',
+    async () => {
+      // Validates: Req 5.1 (accuracy gate passes updates <= 50 m)
+      // Validates: Req 12.2 (geofence events delivered)
+      //
+      // Precondition: inject a simulated location with accuracy < 50 m
+      // via Xcode GPX or the simulator's location simulation.
+      setMode('tour-approach');
 
-    const events = await waitForEvents<NativeAcceptedPayload>(onAccepted, 1, 10_000);
+      const events = await waitForEvents<NativeAcceptedPayload>(onAccepted, 1, 10_000);
 
-    expect(events.length).toBeGreaterThanOrEqual(1);
-    const first = events[0]!;
-    expect(first.accuracyM).toBeLessThanOrEqual(50);
-    expect(first.ts).toBeGreaterThan(0);
-    expect(first.coord).toHaveLength(2);
-    expect(first.mode).toBe('tour-approach');
-  });
+      expect(events.length).toBeGreaterThanOrEqual(1);
+      const first = events[0]!;
+      expect(first.accuracyM).toBeLessThanOrEqual(50);
+      expect(first.ts).toBeGreaterThan(0);
+      expect(first.coord).toHaveLength(2);
+      expect(first.mode).toBe('tour-approach');
+    },
+  );
 
   deviceIt('rejects updates with accuracy > 50 m via the native accuracy gate', async () => {
     // Validates: Req 5.1 (accuracy gate rejects > 50 m)

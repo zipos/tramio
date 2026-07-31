@@ -55,6 +55,7 @@ export const manifestSchema: JSONSchemaType = {
         gtfsRouteId: { type: 'string', minLength: 1 },
         direction: { type: 'string', minLength: 1 },
         agency: { type: 'string', minLength: 1 },
+        mode: { type: 'string', enum: ['bus', 'tram'] },
       },
     },
     languages: {
@@ -108,5 +109,7 @@ export const manifestSchema: JSONSchemaType = {
       },
     },
     checksumAlgorithm: { const: 'sha256' },
+    validUntil: { type: 'string', minLength: 1 },
+    notes: { type: 'string', minLength: 1 },
   },
 };

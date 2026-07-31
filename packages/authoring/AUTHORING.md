@@ -44,34 +44,36 @@ Every narrative `.md` file starts with YAML frontmatter between `---` fences.
 
 ### Optional
 
-| Field             | Type        | Notes                                                     |
-| ----------------- | ----------- | --------------------------------------------------------- |
-| `durationHintSec` | number (>0) | Expected spoken duration.                                 |
-| `tier`            | string      | `free \| pro \| b2b`. Inherits from parent POI if absent. |
-| `sponsor`         | string      | Required when effective tier is `b2b`.                    |
-| `disclosure`      | string      | Required when effective tier is `b2b`.                    |
-| `licenses`        | array       | Each: `{ id, attribution }`. Both non-empty.              |
+| Field             | Type        | Notes                                                                           |
+| ----------------- | ----------- | ------------------------------------------------------------------------------- |
+| `durationHintSec` | number (>0) | Expected spoken duration.                                                       |
+| `tier`            | string      | `free \| time_pass \| token_unlock \| b2b`. Inherits from parent POI if absent. |
+| `sponsor`         | string      | Required when effective tier is `b2b`.                                          |
+| `disclosure`      | string      | Required when effective tier is `b2b`.                                          |
+| `licenses`        | array       | Each: `{ id, attribution }`. Both non-empty.                                    |
 
 ## Error codes
 
-| Code                                      | Fails in | Trigger                                                                     | Fix                                                       |
-| ----------------------------------------- | -------- | --------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `schema-violation`                        | all      | A JSON or frontmatter field violates its schema constraint.                 | Check field types and required fields against this guide. |
-| `parse-error`                             | all      | JSON or YAML syntax error.                                                  | Fix the syntax.                                           |
-| `missing-file`                            | all      | A file referenced in `pois.json` or `manifest.json` does not exist on disk. | Create the file or fix the path.                          |
-| `transcript-missing`                      | all      | `audio` declares a language with no matching `narratives` entry.            | Add a narrative in the same language.                     |
-| `default-language-missing-from-languages` | all      | `manifest.defaultLanguage` is not in `manifest.languages`.                  | Add it to `languages`.                                    |
-| `default-language-narrative-missing`      | all      | A POI has no narrative for the bundle's default language.                   | Author the missing narrative.                             |
-| `b2b-disclosure-missing`                  | all      | A B2B narrative lacks `sponsor` or `disclosure`.                            | Add both fields.                                          |
-| `cc-license-incomplete`                   | all      | A `licenses[]` entry has empty `id` or `attribution`.                       | Fill in both.                                             |
-| `duplicate-id`                            | all      | Duplicate POI id, stop GTFS id, or standby track id.                        | Rename the duplicate.                                     |
-| `standby-file-missing`                    | all      | A standby track declared in manifest has no `standby/{id}.json`.            | Create the file or remove the manifest entry.             |
-| `refuted-claim`                           | all      | Any claim has `verdict: refuted`.                                           | Rewrite the narrative to remove the false assertion.      |
-| `confirmed-claim-missing-source`          | all      | A `confirmed` claim has no `sourceUrl`.                                     | Add the source URL.                                       |
-| `unchecked-claim`                         | strict   | A claim still has `verdict: unchecked`.                                     | Complete the fact-check.                                  |
-| `unverifiable-claim`                      | strict   | A claim has `verdict: unverifiable`.                                        | Rewrite to remove or confirm it.                          |
-| `review-not-approved`                     | strict   | `review.decision` is not `approved` (or review is missing).                 | Get human sign-off.                                       |
-| `memorial-segment-empty`                  | all      | `tone: memorial` but the body is empty/whitespace.                          | Add content.                                              |
+| Code                                      | Fails in | Trigger                                                                     | Fix                                                         |
+| ----------------------------------------- | -------- | --------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `schema-violation`                        | all      | A JSON or frontmatter field violates its schema constraint.                 | Check field types and required fields against this guide.   |
+| `parse-error`                             | all      | JSON or YAML syntax error.                                                  | Fix the syntax.                                             |
+| `missing-file`                            | all      | A file referenced in `pois.json` or `manifest.json` does not exist on disk. | Create the file or fix the path.                            |
+| `transcript-missing`                      | all      | `audio` declares a language with no matching `narratives` entry.            | Add a narrative in the same language.                       |
+| `default-language-missing-from-languages` | all      | `manifest.defaultLanguage` is not in `manifest.languages`.                  | Add it to `languages`.                                      |
+| `default-language-narrative-missing`      | all      | A POI has no narrative for the bundle's default language.                   | Author the missing narrative.                               |
+| `b2b-disclosure-missing`                  | all      | A B2B narrative lacks `sponsor` or `disclosure`.                            | Add both fields.                                            |
+| `cc-license-incomplete`                   | all      | A `licenses[]` entry has empty `id` or `attribution`.                       | Fill in both.                                               |
+| `duplicate-id`                            | all      | Duplicate POI id, stop GTFS id, or standby track id.                        | Rename the duplicate.                                       |
+| `standby-file-missing`                    | all      | A standby track declared in manifest has no `standby/{id}.json`.            | Create the file or remove the manifest entry.               |
+| `refuted-claim`                           | all      | Any claim has `verdict: refuted`.                                           | Rewrite the narrative to remove the false assertion.        |
+| `confirmed-claim-missing-source`          | all      | A `confirmed` claim has no `sourceUrl`.                                     | Add the source URL.                                         |
+| `unchecked-claim`                         | strict   | A claim still has `verdict: unchecked`.                                     | Complete the fact-check.                                    |
+| `unverifiable-claim`                      | strict   | A claim has `verdict: unverifiable`.                                        | Rewrite to remove or confirm it.                            |
+| `review-not-approved`                     | strict   | `review.decision` is not `approved` (or review is missing).                 | Get human sign-off.                                         |
+| `memorial-segment-empty`                  | all      | `tone: memorial` but the body is empty/whitespace.                          | Add content.                                                |
+| `bundle-id-mismatch`                      | all      | `route.json` bundleId differs from `manifest.json` bundleId.                | Set all bundleId fields to the same value as manifest.json. |
+| `release-gtfs-field-missing`              | release  | A stop is missing `gtfsStopId` or `scheduledOffsetSec`.                     | Ingest the GTFS feed and populate the missing fields.       |
 
 ## Worked example
 
@@ -105,6 +107,20 @@ Po prawej, za parkiem — Pałac Wilanowski. Letnia rezydencja Jana III Sobieski
 Place this file at the path declared in `pois.json → narratives → pl` (e.g. `narratives/poi-palac-wilanowski.pl.md`).
 
 ## Running the validator
+
+### Validation levels
+
+The validator supports three strictness levels. Each level includes all
+checks from the levels below it.
+
+| Level       | Flag        | Guarantees                                                                                                            |
+| ----------- | ----------- | --------------------------------------------------------------------------------------------------------------------- |
+| **default** | (none)      | Schema validity, cross-file invariants, no refuted claims, confirmed claims have sourceUrl, bundle identity agreement |
+| **strict**  | `--strict`  | + approved review on every narrative, no unchecked/unverifiable claims                                                |
+| **release** | `--release` | + every stop has `gtfsStopId` and `scheduledOffsetSec` (implies `--strict`)                                           |
+
+> **Note:** The Warsaw bus 180 pack cannot pass `--release` until GTFS
+> shapes.txt ingest lands and `scheduledOffsetSec` is populated.
 
 ### Locally
 

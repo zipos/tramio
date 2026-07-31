@@ -30,7 +30,14 @@ export function base64urlDecode(s: string): Buffer {
  * Deterministic JSON serialization with sorted object keys. Strings are
  * encoded by `JSON.stringify` so escaping rules match the standard parser.
  *
+ * Keys whose value is `undefined` are skipped, matching `JSON.stringify`
+ * semantics. This is critical because the client-side `canonicalJsonStringify`
+ * in packages/storage/src/downloader-core.ts MUST produce identical output —
+ * the two implementations are kept in sync manually.
+ *
  * NB: arrays preserve insertion order; only object key order is normalized.
+ *
+ * @see packages/storage/src/downloader-core.ts — client-side counterpart (keep in sync)
  */
 export function canonicalJsonStringify(value: unknown): string {
   if (value === null || typeof value !== 'object') {
@@ -40,10 +47,13 @@ export function canonicalJsonStringify(value: unknown): string {
     return '[' + value.map((v) => canonicalJsonStringify(v)).join(',') + ']';
   }
   const keys = Object.keys(value as Record<string, unknown>).sort();
-  const parts = keys.map((k) => {
+  const parts: string[] = [];
+  for (const k of keys) {
     const v = (value as Record<string, unknown>)[k];
-    return JSON.stringify(k) + ':' + canonicalJsonStringify(v);
-  });
+    // Skip undefined-valued keys to match JSON.stringify semantics.
+    if (v === undefined) continue;
+    parts.push(JSON.stringify(k) + ':' + canonicalJsonStringify(v));
+  }
   return '{' + parts.join(',') + '}';
 }
 

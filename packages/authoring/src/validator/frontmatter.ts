@@ -143,9 +143,47 @@ function parseFrontmatterBlock(block: string[]): FrontmatterParseResult {
       continue;
     }
 
-    // Multi-line value: must be a list-of-maps (the only nested shape
-    // narrative frontmatter uses, for `licenses`).
+    // Multi-line value: either a list-of-maps (starting with `- key:`)
+    // or a nested map (starting with `key: value` at deeper indent).
+    // The narrative frontmatter uses list-of-maps for `licenses` and
+    // `claims`, and nested maps for `review`.
     i += 1;
+
+    // Peek ahead to determine if this is a list or a map.
+    let peekIdx = i;
+    while (peekIdx < block.length && (block[peekIdx] ?? '').trim().length === 0) {
+      peekIdx += 1;
+    }
+    const peekLine = block[peekIdx] ?? '';
+    const peekIndent = indentOf(peekLine);
+    const isListStart = peekLine.trimStart().startsWith('- ');
+
+    if (!isListStart && peekIndent > 0) {
+      // Nested map: read key: value pairs at this indent level.
+      const obj: Record<string, unknown> = {};
+      const mapIndent = peekIndent;
+      while (i < block.length) {
+        const mapLine = block[i] ?? '';
+        if (mapLine.trim().length === 0) {
+          i += 1;
+          continue;
+        }
+        const mapKv = tryParseKeyValue(mapLine);
+        if (!mapKv || mapKv.indent < mapIndent) break;
+        if (mapKv.inlineValue === undefined) {
+          return {
+            ok: false,
+            message: `Deeply nested mapping is unsupported at line ${i + 1}`,
+          };
+        }
+        obj[mapKv.key] = parseScalar(mapKv.inlineValue);
+        i += 1;
+      }
+      out[kv.key] = obj;
+      continue;
+    }
+
+    // List-of-maps.
     const items: Record<string, unknown>[] = [];
     let listIndent: number | null = null;
 

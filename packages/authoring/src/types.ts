@@ -84,6 +84,7 @@ export interface ManifestTransitLine {
   gtfsRouteId: string;
   direction: string;
   agency: string;
+  mode?: 'bus' | 'tram';
 }
 
 export interface ManifestDeadReckoning {
@@ -134,10 +135,20 @@ export interface Manifest {
 
 export interface Stop {
   id: string;
-  gtfsStopId: string;
+  /**
+   * GTFS feed stop id. Optional: a route authored from OpenStreetMap stop
+   * platforms alone has real coordinates but no feed ids until a GTFS feed
+   * is ingested. Omitted rather than nulled when unknown.
+   */
+  gtfsStopId?: string;
+  /** Human-readable stop name as published by the agency. */
+  name?: string;
   coord: LatLng;
-  /** Scheduled offset from route start, in seconds. Consumed by DR. */
-  scheduledOffsetSec: number;
+  /**
+   * Scheduled offset from route start, in seconds. Consumed by DR.
+   * Optional for the same reason as `gtfsStopId` — no feed, no timings.
+   */
+  scheduledOffsetSec?: number;
 }
 
 export interface Route {
@@ -174,10 +185,15 @@ export interface Poi {
   /** Minimum dwell seconds before the trigger fires (>= 3, Req 5.3). */
   dwellSec: number;
   /** May the engine play this POI later, after a missed trigger? */
-  deferrable: boolean;
+  deferrable?: boolean;
   /** May the engine fire this POI from a Dead_Reckoning estimate? */
-  drPermitted: boolean;
+  drPermitted?: boolean;
   tier: EntitlementTier;
+  /**
+   * Delivery register for the POI. `memorial` marks Holocaust/cemetery
+   * material. Optional; defaults to `standard`.
+   */
+  tone?: 'standard' | 'memorial';
   /**
    * Language-keyed paths to narrative Markdown files. Required: at minimum
    * the bundle's `defaultLanguage` must be present.
@@ -208,6 +224,50 @@ export interface NarrativeLicense {
   attribution: string;
 }
 
+/**
+ * Verdict on a factual claim within a narrative segment.
+ *
+ * - `confirmed`: claim verified against a primary source (sourceUrl required).
+ * - `refuted`: claim is factually false — never shippable.
+ * - `unverifiable`: claim cannot be confirmed or denied from available sources.
+ * - `unchecked`: claim has not yet been reviewed.
+ */
+export type ClaimVerdict = 'confirmed' | 'refuted' | 'unverifiable' | 'unchecked';
+
+/**
+ * A factual claim extracted from AI-generated narration. Tracks provenance
+ * and human fact-check status so the review gate can block shipment of
+ * unverified or false statements (e.g. the ghetto-wall-class error).
+ */
+export interface Claim {
+  id: string;
+  text: string;
+  verdict: ClaimVerdict;
+  /** Required when verdict is 'confirmed'. */
+  sourceUrl?: string;
+  /** ISO 8601 timestamp when the claim was last checked. */
+  checkedAt?: string;
+}
+
+/** Review decision for a narrative segment. */
+export type ReviewDecision = 'approved' | 'rejected' | 'pending';
+
+/** Human sign-off record attached to a narrative segment. */
+export interface Review {
+  reviewedBy: string;
+  /** ISO 8601 timestamp. */
+  reviewedAt: string;
+  decision: ReviewDecision;
+}
+
+/**
+ * Delivery register (tone) for a narrative segment.
+ *
+ * - `standard`: normal narration.
+ * - `memorial`: Holocaust, cemetery, or other sensitive memorial material.
+ */
+export type NarrativeTone = 'standard' | 'memorial';
+
 export interface NarrativeFrontmatter {
   poiId: string;
   language: Iso6391;
@@ -230,6 +290,22 @@ export interface NarrativeFrontmatter {
    */
   tier?: EntitlementTier;
   licenses?: NarrativeLicense[];
+  /**
+   * Factual claims extracted from AI-generated narration. Each claim
+   * carries a verdict that the review gate enforces. Optional so existing
+   * bundles keep validating.
+   */
+  claims?: Claim[];
+  /**
+   * Human review sign-off. In strict mode, segments without an approved
+   * review are rejected. Optional so existing bundles keep validating.
+   */
+  review?: Review;
+  /**
+   * Delivery register. `memorial` marks Holocaust/cemetery material and
+   * must not have an empty narrative body. Optional; defaults to `standard`.
+   */
+  tone?: NarrativeTone;
 }
 
 // ---------------------------------------------------------------------------

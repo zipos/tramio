@@ -66,9 +66,7 @@ describe('defaultCapabilities()', () => {
   });
 
   it('exposes the same flag set as the OS_MATRIX descriptor table', () => {
-    expect(Object.keys(defaultCapabilities()).sort()).toEqual(
-      Object.keys(OS_MATRIX).sort(),
-    );
+    expect(Object.keys(defaultCapabilities()).sort()).toEqual(Object.keys(OS_MATRIX).sort());
   });
 });
 

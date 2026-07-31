@@ -42,9 +42,19 @@ export function createExpoFsPort(): FileSystemPort {
     },
 
     async rm(target, options) {
+      // When force is false, the caller expects an error if the target is
+      // missing — matching Node's `fs.rm({force: false})` and the
+      // nodeFsPort implementation. The previous code early-returned (silently
+      // succeeded) when the target was absent AND force was false, which
+      // inverted the semantics.
+      //
+      // @see packages/storage/src/nodeFsPort.ts — rm() via fs.rm
+      // @see packages/storage/src/fsPort.ts — FileSystemPort contract
       if (options?.force === false) {
         const info = await LegacyFS.getInfoAsync(target);
-        if (!info.exists) return;
+        if (!info.exists) {
+          throw new Error(`ENOENT: no such file or directory, rm '${target}'`);
+        }
       }
       await LegacyFS.deleteAsync(target, { idempotent: options?.force ?? false });
     },

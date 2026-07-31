@@ -18,6 +18,7 @@ declare module '@maplibre/maplibre-react-native' {
     attributionEnabled?: boolean;
     telemetryEnabled?: boolean;
     onDidFinishLoadingMap?: () => void;
+    onRegionDidChange?: () => void;
     children?: React.ReactNode;
   }
 
@@ -36,11 +37,33 @@ declare module '@maplibre/maplibre-react-native' {
     pitch?: number;
     animationDuration?: number;
     animationMode?: string;
+    followUserLocation?: boolean;
+    children?: React.ReactNode;
+  }
+
+  interface ShapeSourceProps {
+    id: string;
+    shape?: GeoJSON.Feature | GeoJSON.FeatureCollection | GeoJSON.Geometry;
+    children?: React.ReactNode;
+  }
+
+  interface LineLayerProps {
+    id: string;
+    style?: Record<string, unknown>;
+  }
+
+  interface CircleLayerProps {
+    id: string;
+    style?: Record<string, unknown>;
+    filter?: unknown[];
   }
 
   interface MapLibreGL {
     MapView: ComponentType<MapViewProps>;
     Camera: ComponentType<CameraProps>;
+    ShapeSource: ComponentType<ShapeSourceProps>;
+    LineLayer: ComponentType<LineLayerProps>;
+    CircleLayer: ComponentType<CircleLayerProps>;
     setAccessToken(token: string | null): void;
   }
 

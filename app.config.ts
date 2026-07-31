@@ -69,10 +69,10 @@ const config = {
   android: {
     package: ANDROID_PACKAGE,
     predictiveBackGestureEnabled: false,
-    // Cleartext only for local/dev LAN catalog. Production EAS builds must use HTTPS.
-    // Override: CATALOG_ALLOW_CLEARTEXT=1. Force off: EAS_BUILD_PROFILE=production.
+    // Cleartext only for local/dev LAN catalog. Production EAS builds ALWAYS require HTTPS —
+    // the CATALOG_ALLOW_CLEARTEXT override is ignored when EAS_BUILD_PROFILE is 'production'.
     usesCleartextTraffic:
-      process.env.CATALOG_ALLOW_CLEARTEXT === '1' || process.env.EAS_BUILD_PROFILE !== 'production',
+      process.env.EAS_BUILD_PROFILE !== 'production' && process.env.CATALOG_ALLOW_CLEARTEXT === '1',
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
       backgroundColor: '#ffffff',
@@ -93,6 +93,9 @@ const config = {
       'WAKE_LOCK',
       'INTERNET',
       'ACCESS_NETWORK_STATE',
+      // Android 16+ JobScheduler persists expo-task-manager location jobs across
+      // reboot; without this, LocationTaskConsumer crashes on the first fix.
+      'RECEIVE_BOOT_COMPLETED',
     ],
   },
 

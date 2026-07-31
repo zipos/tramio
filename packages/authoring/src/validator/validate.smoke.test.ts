@@ -187,8 +187,7 @@ describe('validateBundle (task 2.2) — smoke', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     const missing = result.errors.find(
-      (e) =>
-        e.hint.code === 'missing-file' && e.jsonPointer === '/pois/0/audio/en',
+      (e) => e.hint.code === 'missing-file' && e.jsonPointer === '/pois/0/audio/en',
     );
     expect(missing).toBeDefined();
   });
@@ -330,9 +329,7 @@ Body.
     const result = validateBundle(virtualFileSystem(bundle));
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    const offender = result.errors.find(
-      (e) => e.filePath === 'narratives/poi-rynek.pl.md',
-    );
+    const offender = result.errors.find((e) => e.filePath === 'narratives/poi-rynek.pl.md');
     expect(offender).toBeDefined();
   });
 

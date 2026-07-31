@@ -5,13 +5,7 @@
 // satisfied) or a list of `BundleValidationError`s, each pinned to a single
 // `filePath` + RFC 6901 `jsonPointer` location.
 
-import type {
-  Manifest,
-  NarrativeFrontmatter,
-  Pois,
-  Route,
-  StandbyTrack,
-} from '../types';
+import type { Manifest, NarrativeFrontmatter, Pois, Route, StandbyTrack } from '../types';
 
 /**
  * Closed taxonomy of hint codes attached to validation errors. The codes
@@ -29,7 +23,15 @@ export type HintCode =
   | 'b2b-disclosure-missing'
   | 'cc-license-incomplete'
   | 'duplicate-id'
-  | 'standby-file-missing';
+  | 'standby-file-missing'
+  | 'refuted-claim'
+  | 'confirmed-claim-missing-source'
+  | 'unchecked-claim'
+  | 'unverifiable-claim'
+  | 'review-not-approved'
+  | 'memorial-segment-empty'
+  | 'bundle-id-mismatch'
+  | 'release-gtfs-field-missing';
 
 export interface Hint {
   readonly code: HintCode;
@@ -72,3 +74,27 @@ export interface LoadedBundle {
 export type ValidationResult =
   | { readonly ok: true; readonly bundle: LoadedBundle }
   | { readonly ok: false; readonly errors: readonly BundleValidationError[] };
+
+/**
+ * Validation level ladder:
+ *
+ * - **default** — only hard errors: refuted claims, confirmed claims
+ *   without sourceUrl, structural schema violations, and cross-file
+ *   invariants (identity agreement, language coverage, etc.).
+ * - **strict** — adds the review gate: segments must have an approved
+ *   review, and claims with verdict 'unchecked' or 'unverifiable' are
+ *   rejected.
+ * - **release** — everything strict requires plus GTFS completeness:
+ *   every stop must have `gtfsStopId` and `scheduledOffsetSec`. Intended
+ *   for release-bound bundles; the Warsaw 180 pack cannot pass this level
+ *   until GTFS shapes.txt ingest lands.
+ */
+export interface ValidateOptions {
+  /** Enable strict mode. Default: `false`. */
+  readonly strict?: boolean;
+  /**
+   * Enable release mode (implies strict). Requires GTFS fields
+   * (`gtfsStopId`, `scheduledOffsetSec`) on every stop. Default: `false`.
+   */
+  readonly release?: boolean;
+}

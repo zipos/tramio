@@ -29,10 +29,10 @@ export type PackInstallState = 'unknown' | 'missing' | 'downloading' | 'ready' |
 import { formatCatalogUnreachableMessage, resolveCatalogBaseUrl } from './resolveCatalogBaseUrl';
 
 const ROUTE_COPY: Readonly<Record<string, { title: string; description: string }>> = {
-  'warsaw-tram-22-east': {
-    title: 'Warsaw Tram 22 — East (summer)',
+  'warsaw-bus-180-north': {
+    title: 'Warsaw Bus 180 — northbound',
     description:
-      'Praga → Plac Starynkiewicza. Shortened summer route until track works finish (~2 Aug).',
+      'Wilanów → Żoliborz along the Trakt Królewski, then through Muranów and Powązki. Northbound only; the southbound direction ships as a separate bundle.',
   },
 };
 

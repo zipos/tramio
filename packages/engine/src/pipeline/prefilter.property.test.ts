@@ -242,7 +242,7 @@ describe('Property 1: Geofence pipeline rejects low-accuracy and spike updates',
           // Shouldn't happen with accuracyM=10 and no prev
           return;
         }
-        state = firstOut.nextState;
+        state = (firstOut as PipelineAccepted).nextState;
 
         // Feed the valid second update
         const out = step(state, curr, curr.ts);
@@ -257,4 +257,24 @@ describe('Property 1: Geofence pipeline rejects low-accuracy and spike updates',
       { numRuns: 200, seed: 42 },
     );
   });
+
+  // Sub-property 4: good-accuracy single updates are accepted (Req 5.1 inverse)
+  // A single update with accuracy <= 50 m (no previous update to spike-check
+  // against) must always be accepted. This is the complementary property to
+  // sub-property 1: the accuracy gate accepts what it doesn't reject.
+  property(
+    { n: 1, title: 'Geofence pipeline accepts good-accuracy updates' },
+    arbCoord,
+    arbGoodAccuracy,
+    arbTs,
+    (coord, accuracyM, ts) => {
+      const state = freshState();
+      const raw: PositionUpdate = { ts, coord, accuracyM };
+      const out = step(state, raw, ts);
+      // With no previous update, there is no spike check — only accuracy.
+      // Good accuracy (<=50 m) must be accepted.
+      expect(isRejected(out)).toBe(false);
+    },
+    { numRuns: 200 },
+  );
 });

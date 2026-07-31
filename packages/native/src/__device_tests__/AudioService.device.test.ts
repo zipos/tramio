@@ -23,7 +23,7 @@
 
 import { AudioService } from '../audio/AudioService';
 import { FakeAudioBridge } from '../audio/FakeAudioBridge';
-import type { AudioServiceEvent, DecryptStreamHandle } from '../audio/types';
+import type { AudioServiceEvent } from '../audio/types';
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -41,14 +41,6 @@ jest.setTimeout(30_000);
  */
 const TEST_AUDIO_URL = 'file:///test-assets/sine-440hz-5s.m4a';
 const TEST_SEGMENT_ID = 'smoke-test-segment-1';
-
-/**
- * Simulated decrypt stream handle. In production this comes from
- * Crypto_Service; for device smoke tests we use an unencrypted test
- * asset routed through the stream path to verify the native player
- * accepts the handle format.
- */
-const TEST_STREAM_HANDLE = 'test-stream://smoke-test/segment-1' as DecryptStreamHandle;
 
 // ---------------------------------------------------------------------------
 // Helpers

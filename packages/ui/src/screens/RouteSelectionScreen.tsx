@@ -1,5 +1,11 @@
 // RouteSelectionScreen — Catalog routes with offline pack download + embedded fallback.
+//
+// FIX 3: PL/EN language selector defaulting from device locale.
+// FIX 4: Rider-facing copy replacing dev text; 'How it works' affordance.
+// FIX 5: Error surfacing on corrupt pack / loadInstalledTour failure.
+// FIX 8: 44pt hit targets, WCAG-compliant contrast.
 
+import { useCallback, useState } from 'react';
 import type { ReactElement } from 'react';
 import {
   ActivityIndicator,
@@ -27,9 +33,27 @@ export interface RouteSelectionScreenProps {
       docsDir?: string;
       pack?: PackRef;
       narratives?: Readonly<Record<string, string>>;
+      tones?: Readonly<Record<string, 'standard' | 'memorial'>>;
     },
   ) => void;
 }
+
+// ─── Language detection ───────────────────────────────────────────────────────
+
+type TourLanguage = 'pl' | 'en';
+
+function getDefaultLanguage(): TourLanguage {
+  try {
+    // Hermes supports Intl.DateTimeFormat().resolvedOptions().locale
+    const locale = Intl.DateTimeFormat().resolvedOptions().locale;
+    if (locale.startsWith('pl')) return 'pl';
+  } catch {
+    // Fallback to English if Intl is unavailable.
+  }
+  return 'en';
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function poiCenterMap(route: DemoRoute): Map<string, readonly [number, number]> {
   const map = new Map<string, readonly [number, number]>();
@@ -51,20 +75,112 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// ─── Language Selector ────────────────────────────────────────────────────────
+
+function LanguageSelector({
+  language,
+  onChangeLanguage,
+}: {
+  language: TourLanguage;
+  onChangeLanguage: (lang: TourLanguage) => void;
+}): ReactElement {
+  return (
+    <View style={styles.languageCard}>
+      <Text style={styles.languageTitle}>Narration language</Text>
+      <View style={styles.languageRow}>
+        <TouchableOpacity
+          style={[styles.languageButton, language === 'pl' && styles.languageButtonSelected]}
+          onPress={() => onChangeLanguage('pl')}
+          accessibilityRole="button"
+          accessibilityState={{ selected: language === 'pl' }}
+          accessibilityLabel="Polish narration"
+        >
+          <Text
+            style={[
+              styles.languageButtonText,
+              language === 'pl' && styles.languageButtonTextSelected,
+            ]}
+          >
+            🇵🇱 Polski
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.languageButton, language === 'en' && styles.languageButtonSelected]}
+          onPress={() => onChangeLanguage('en')}
+          accessibilityRole="button"
+          accessibilityState={{ selected: language === 'en' }}
+          accessibilityLabel="English narration"
+        >
+          <Text
+            style={[
+              styles.languageButtonText,
+              language === 'en' && styles.languageButtonTextSelected,
+            ]}
+          >
+            🇬🇧 English
+          </Text>
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.languageHint}>Applies to the tour you start next.</Text>
+    </View>
+  );
+}
+
+// ─── How It Works ─────────────────────────────────────────────────────────────
+
+function HowItWorks(): ReactElement {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <View style={styles.howItWorksCard}>
+      <TouchableOpacity
+        onPress={() => setExpanded((prev) => !prev)}
+        style={styles.howItWorksHeader}
+        accessibilityRole="button"
+        accessibilityLabel={expanded ? 'Collapse how it works' : 'Expand how it works'}
+        accessibilityState={{ expanded }}
+      >
+        <Text style={styles.howItWorksTitle}>How it works</Text>
+        <Text style={styles.howItWorksChevron}>{expanded ? '▲' : '▼'}</Text>
+      </TouchableOpacity>
+      {expanded ? (
+        <View style={styles.howItWorksBody}>
+          <Text style={styles.howItWorksStep}>
+            <Text style={styles.howItWorksStepNum}>1.</Text> Board the bus and tap Start Tour.
+          </Text>
+          <Text style={styles.howItWorksStep}>
+            <Text style={styles.howItWorksStepNum}>2.</Text> Put your phone away — narration plays
+            through your headphones as you pass landmarks.
+          </Text>
+          <Text style={styles.howItWorksStep}>
+            <Text style={styles.howItWorksStepNum}>3.</Text> Tap End Tour when you get off, or let
+            it finish at the last stop.
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+// ─── Catalog Route Card ───────────────────────────────────────────────────────
+
 function CatalogRouteCard({
   route,
   state,
   preview,
+  language,
+  startError,
   onDownload,
   onStart,
 }: {
   route: CatalogRouteEntry;
   state: PackInstallState;
   preview?: DemoRoute;
+  language: TourLanguage;
+  startError: string | null;
   onDownload: () => void;
   onStart: () => void;
 }): ReactElement {
-  const key = routeKey(route.bundleId, route.version);
   const ready = state === 'ready';
   const downloading = state === 'downloading';
 
@@ -72,9 +188,7 @@ function CatalogRouteCard({
     <View style={styles.routeCard}>
       <Text style={styles.routeName}>{route.title}</Text>
       <Text style={styles.routeDescription}>{route.description}</Text>
-      <Text style={styles.packMeta}>
-        Pack {route.bundleId}@{route.version} · {formatBytes(route.sizeBytes)}
-      </Text>
+      <Text style={styles.packMeta}>Offline pack · {formatBytes(route.sizeBytes)}</Text>
 
       {preview ? (
         <RoutePolylinePreview
@@ -91,12 +205,18 @@ function CatalogRouteCard({
         </View>
       ) : null}
 
+      {startError ? <Text style={styles.startErrorText}>{startError}</Text> : null}
+
       <TouchableOpacity
         style={[styles.primaryButton, ready && styles.startButton]}
         onPress={ready ? onStart : onDownload}
         disabled={downloading}
         accessibilityRole="button"
-        accessibilityLabel={ready ? `Start tour ${route.title}` : `Download pack ${key}`}
+        accessibilityLabel={
+          ready
+            ? `Start tour ${route.title} in ${language === 'pl' ? 'Polish' : 'English'}`
+            : `Download offline pack for ${route.title}`
+        }
       >
         <Text style={styles.primaryButtonText}>{ready ? 'Start Tour' : 'Download Pack'}</Text>
       </TouchableOpacity>
@@ -104,12 +224,26 @@ function CatalogRouteCard({
   );
 }
 
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+
 export function RouteSelectionScreen({ onStartTour }: RouteSelectionScreenProps): ReactElement {
   const { routes, installState, error, catalogWarning, downloadPack, loadInstalledTour, storage } =
     usePackManager();
 
+  const [language, setLanguage] = useState<TourLanguage>(getDefaultLanguage);
+  const [startError, setStartError] = useState<string | null>(null);
+
   const embeddedById = new Map(DEMO_ROUTES.map((r) => [r.routeId, r]));
   const showEmbeddedFallback = routes.length === 0;
+
+  const handleStartTourWithConfig = useCallback(
+    (config: StartTourConfig, meta?: Parameters<typeof onStartTour>[1]) => {
+      // FIX 3: Override language on the config at start time.
+      const configWithLang: StartTourConfig = { ...config, language };
+      onStartTour(configWithLang, meta);
+    },
+    [language, onStartTour],
+  );
 
   return (
     <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -117,9 +251,14 @@ export function RouteSelectionScreen({ onStartTour }: RouteSelectionScreenProps)
         Tramio
       </Text>
       <Text style={styles.subtitle}>
-        Download an offline pack over Wi‑Fi, then start a tour. Packs include map tiles, route
-        geometry, and narratives (Storage_Manager + expo-file-system).
+        Board the bus, put on headphones, and hear narration triggered automatically as you pass
+        landmarks. Download a pack over Wi‑Fi for offline maps and audio.
       </Text>
+
+      <HowItWorks />
+
+      {/* FIX 3: Language selector */}
+      <LanguageSelector language={language} onChangeLanguage={setLanguage} />
 
       {!storage ? (
         <View style={styles.downloadRow}>
@@ -141,18 +280,28 @@ export function RouteSelectionScreen({ onStartTour }: RouteSelectionScreenProps)
             route={route}
             state={installState[key] ?? 'missing'}
             {...(preview ? { preview } : {})}
+            language={language}
+            startError={startError}
             onDownload={() => void downloadPack(route.bundleId, route.version)}
             onStart={() => {
+              setStartError(null);
               void loadInstalledTour(route.bundleId, route.version)
                 .then((loaded) => {
-                  onStartTour(loaded.config, {
+                  handleStartTourWithConfig(loaded.config, {
                     title: loaded.title,
                     docsDir: loaded.docsDir,
                     pack: loaded.ref,
                     narratives: loaded.narratives,
+                    tones: loaded.tones,
                   });
                 })
-                .catch(() => undefined);
+                .catch((err: unknown) => {
+                  const message =
+                    err instanceof Error ? err.message : 'Failed to load the tour pack.';
+                  setStartError(
+                    `Could not start the tour: ${message}. Try re-downloading the pack.`,
+                  );
+                });
             }}
           />
         );
@@ -161,7 +310,7 @@ export function RouteSelectionScreen({ onStartTour }: RouteSelectionScreenProps)
       {showEmbeddedFallback
         ? DEMO_ROUTES.map((route) => (
             <View key={route.routeId} style={styles.routeCard}>
-              <Text style={styles.routeName}>{route.title} (embedded fallback)</Text>
+              <Text style={styles.routeName}>{route.title}</Text>
               <Text style={styles.routeDescription}>{route.description}</Text>
               <RoutePolylinePreview
                 route={route.tourConfig.route}
@@ -170,10 +319,11 @@ export function RouteSelectionScreen({ onStartTour }: RouteSelectionScreenProps)
               />
               <TouchableOpacity
                 style={styles.startButton}
-                onPress={() => onStartTour(route.tourConfig, { title: route.title })}
+                onPress={() => handleStartTourWithConfig(route.tourConfig, { title: route.title })}
                 accessibilityRole="button"
+                accessibilityLabel={`Start tour ${route.title} in ${language === 'pl' ? 'Polish' : 'English'}`}
               >
-                <Text style={styles.primaryButtonText}>Start Tour (no pack)</Text>
+                <Text style={styles.primaryButtonText}>Start Tour</Text>
               </TouchableOpacity>
             </View>
           ))
@@ -181,6 +331,8 @@ export function RouteSelectionScreen({ onStartTour }: RouteSelectionScreenProps)
     </ScrollView>
   );
 }
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   scrollContent: {
@@ -198,12 +350,97 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 14,
-    color: '#666',
-    marginBottom: 24,
+    color: '#374151',
+    marginBottom: 20,
     textAlign: 'center',
     lineHeight: 20,
     maxWidth: 360,
   },
+  // ─── How It Works ────────────────────────────────────────────────────
+  howItWorksCard: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: '#f9fafb',
+    borderRadius: 12,
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  howItWorksHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    minHeight: 44,
+  },
+  howItWorksTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  howItWorksChevron: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  howItWorksBody: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    gap: 8,
+  },
+  howItWorksStep: {
+    fontSize: 13,
+    color: '#374151',
+    lineHeight: 18,
+  },
+  howItWorksStepNum: {
+    fontWeight: '700',
+    color: '#2563eb',
+  },
+  // ─── Language Selector ──────────────────────────────────────────────
+  languageCard: {
+    width: '100%',
+    maxWidth: 400,
+    marginBottom: 20,
+  },
+  languageTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  languageRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  languageButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#d4d4d4',
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  languageButtonSelected: {
+    borderColor: '#2563eb',
+    backgroundColor: '#eff6ff',
+  },
+  languageButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#444',
+  },
+  languageButtonTextSelected: {
+    color: '#1d4ed8',
+  },
+  languageHint: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 6,
+  },
+  // ─── Route Cards ────────────────────────────────────────────────────
   routeCard: {
     width: '100%',
     maxWidth: 400,
@@ -220,13 +457,13 @@ const styles = StyleSheet.create({
   },
   routeDescription: {
     fontSize: 14,
-    color: '#555',
+    color: '#374151',
     lineHeight: 20,
     marginBottom: 8,
   },
   packMeta: {
     fontSize: 12,
-    color: '#64748b',
+    color: '#4b5563',
     marginBottom: 12,
   },
   downloadRow: {
@@ -237,7 +474,7 @@ const styles = StyleSheet.create({
   },
   downloadLabel: {
     fontSize: 14,
-    color: '#444',
+    color: '#374151',
   },
   errorText: {
     color: '#dc2626',
@@ -245,8 +482,15 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     textAlign: 'center',
   },
+  startErrorText: {
+    color: '#dc2626',
+    fontSize: 13,
+    marginTop: 8,
+    marginBottom: 4,
+    lineHeight: 18,
+  },
   warningText: {
-    color: '#b45309',
+    color: '#92400e',
     fontSize: 13,
     marginBottom: 12,
     textAlign: 'center',
@@ -260,6 +504,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignSelf: 'center',
     marginTop: 12,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   startButton: {
     backgroundColor: '#2563eb',

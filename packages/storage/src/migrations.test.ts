@@ -6,11 +6,7 @@
 import Database from 'better-sqlite3';
 
 import { betterSqliteDriver } from './sqlite';
-import {
-  migrate,
-  readCurrentVersion,
-  MIGRATIONS,
-} from './migrations';
+import { migrate, readCurrentVersion, MIGRATIONS } from './migrations';
 import { SCHEMA_VERSION } from './schema';
 
 interface CountRow {
@@ -32,9 +28,7 @@ describe('migrate', () => {
       await migrate(driver);
 
       const tables = raw
-        .prepare(
-          `SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`,
-        )
+        .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`)
         .all() as ReadonlyArray<{ name: string }>;
       const names = tables.map((t) => t.name);
 
@@ -73,9 +67,9 @@ describe('migrate', () => {
 
       // Insert a row to make sure the second migrate doesn't truncate the
       // tables.
-      raw.prepare(
-        `INSERT INTO device_id (id, device_id, created_at_utc) VALUES (1, ?, ?)`,
-      ).run('anon-device-test', Date.now());
+      raw
+        .prepare(`INSERT INTO device_id (id, device_id, created_at_utc) VALUES (1, ?, ?)`)
+        .run('anon-device-test', Date.now());
 
       await migrate(driver);
       await migrate(driver);
@@ -97,9 +91,7 @@ describe('migrate', () => {
            (bundle_id, version, asset_path, status, bytes_total, bytes_done, sha256, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       );
-      expect(() =>
-        insert.run('b', 'v', 'a', 'bogus', 0, 0, null, Date.now()),
-      ).toThrow();
+      expect(() => insert.run('b', 'v', 'a', 'bogus', 0, 0, null, Date.now())).toThrow();
       // Valid status passes.
       insert.run('b', 'v', 'a', 'pending', 0, 0, null, Date.now());
     } finally {

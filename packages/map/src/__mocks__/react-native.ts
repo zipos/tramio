@@ -11,6 +11,14 @@ export function View(props: Record<string, unknown>) {
   return React.createElement('View', props, props.children as React.ReactNode);
 }
 
+export function Text(props: Record<string, unknown>) {
+  return React.createElement('Text', props, props.children as React.ReactNode);
+}
+
+export function TouchableOpacity(props: Record<string, unknown>) {
+  return React.createElement('TouchableOpacity', props, props.children as React.ReactNode);
+}
+
 export const StyleSheet = {
   create: <T extends Record<string, Record<string, unknown>>>(styles: T): T => styles,
 };

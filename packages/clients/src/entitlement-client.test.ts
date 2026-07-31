@@ -1,12 +1,14 @@
 import {
   createEntitlementClient,
   EntitlementHttpError,
+  EntitlementVerificationError,
   type CachedEntitlementEntry,
   type EntitlementStorageProvider,
   type EntitlementsPayload,
   type SignedEnvelope,
   type ReceiptResponsePayload,
   type RestoreResponsePayload,
+  type EnvelopeVerifier,
 } from './entitlement-client';
 import {
   createHttpClient,
@@ -64,11 +66,7 @@ function makeStorage(opts?: {
       }
       return store._cached;
     },
-    async saveCachedEntitlements(
-      deviceId: string,
-      payload: string,
-      expiryUtcSeconds: number,
-    ) {
+    async saveCachedEntitlements(deviceId: string, payload: string, expiryUtcSeconds: number) {
       store.savedCache = { deviceId, payload, expiryUtcSeconds };
     },
   };
@@ -76,10 +74,15 @@ function makeStorage(opts?: {
 }
 
 function makeFetch(
-  responses: Record<string, { status: number; body: Uint8Array; headers?: Record<string, string | null> }>,
+  responses: Record<
+    string,
+    { status: number; body: Uint8Array; headers?: Record<string, string | null> }
+  >,
 ): FetchImpl {
   return async (url, _init) => {
-    let matched: { status: number; body: Uint8Array; headers?: Record<string, string | null> } | undefined;
+    let matched:
+      | { status: number; body: Uint8Array; headers?: Record<string, string | null> }
+      | undefined;
     for (const [pattern, resp] of Object.entries(responses)) {
       if (url.includes(pattern)) {
         matched = resp;
@@ -109,13 +112,17 @@ function makeFetch(
 }
 
 function createTestClient(opts: {
-  fetchResponses?: Record<string, { status: number; body: Uint8Array; headers?: Record<string, string | null> }>;
+  fetchResponses?: Record<
+    string,
+    { status: number; body: Uint8Array; headers?: Record<string, string | null> }
+  >;
   tourActive?: boolean;
   unmetered?: boolean;
   deviceId?: string | null;
   cached?: CachedEntitlementEntry | null;
   generateUuid?: () => string;
   now?: () => number;
+  verifyEnvelope?: EnvelopeVerifier;
 }) {
   const {
     fetchResponses = {},
@@ -125,6 +132,7 @@ function createTestClient(opts: {
     cached = null,
     generateUuid = () => 'test-device-uuid-v4',
     now = () => 1705312800, // 2024-01-15T10:00:00Z
+    verifyEnvelope = async () => true,
   } = opts;
 
   const networkInfo = makeNetworkInfo(unmetered);
@@ -141,6 +149,7 @@ function createTestClient(opts: {
     storage,
     generateUuid,
     now,
+    verifyEnvelope,
   });
 
   return { client, storage, networkInfo };
@@ -192,6 +201,7 @@ describe('EntitlementClient.getDeviceId', () => {
       storage,
       generateUuid: () => 'unused',
       now: () => 1705312800,
+      verifyEnvelope: async () => true,
     });
 
     await client.getDeviceId();
@@ -396,6 +406,7 @@ describe('EntitlementClient.resolveEntitlements', () => {
       http,
       storage,
       now: () => 1705312800,
+      verifyEnvelope: async () => true,
     });
 
     await client.resolveEntitlements();
@@ -440,7 +451,10 @@ describe('EntitlementClient.submitReceipt', () => {
     let capturedBody = '';
     const mockFetch: FetchImpl = async (_url, init) => {
       if (init.body) {
-        capturedBody = typeof init.body === 'string' ? init.body : new TextDecoder().decode(init.body as Uint8Array);
+        capturedBody =
+          typeof init.body === 'string'
+            ? init.body
+            : new TextDecoder().decode(init.body as Uint8Array);
       }
       const resp: ReceiptResponsePayload = {
         deviceId: 'dev-1',
@@ -472,6 +486,7 @@ describe('EntitlementClient.submitReceipt', () => {
       http,
       storage,
       now: () => 1705312800,
+      verifyEnvelope: async () => true,
     });
 
     await client.submitReceipt('rcpt-1', 'apple-receipt-blob');
@@ -720,5 +735,136 @@ describe('EntitlementClient - no signup required', () => {
     const result = await client.resolveEntitlements();
     expect(result.deviceId).toBe('anon-device-001');
     expect(result.entitlements).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Envelope signature verification (Req 20.3)
+// ---------------------------------------------------------------------------
+
+describe('EntitlementClient - envelope signature verification', () => {
+  const entitlementsPayload: EntitlementsPayload = {
+    deviceId: 'existing-device-id',
+    entitlements: [{ tier: 'free', grantedAt: '2024-01-01T00:00:00Z' }],
+    expiryUtc: '2024-01-20T00:00:00Z',
+  };
+
+  const receiptResponse: ReceiptResponsePayload = {
+    deviceId: 'existing-device-id',
+    platformReceiptId: 'receipt-123',
+    entitlements: [
+      { tier: 'time_pass', grantedAt: '2024-01-15T10:00:00Z', expiresAt: '2024-01-16T10:00:00Z' },
+    ],
+    expiryUtc: '2024-01-20T00:00:00Z',
+  };
+
+  const restoreResponse: RestoreResponsePayload = {
+    deviceId: 'existing-device-id',
+    entitlements: [{ tier: 'token_unlock', grantedAt: '2024-01-10T00:00:00Z' }],
+    expiryUtc: '2024-01-20T00:00:00Z',
+  };
+
+  it('resolveEntitlements() throws EntitlementVerificationError when signature is invalid', async () => {
+    const { client, storage } = createTestClient({
+      deviceId: 'existing-device-id',
+      fetchResponses: {
+        '/v1/entitlements': {
+          status: 200,
+          body: jsonBytes(makeEnvelope(entitlementsPayload)),
+        },
+      },
+      verifyEnvelope: async () => false,
+    });
+
+    await expect(client.resolveEntitlements()).rejects.toThrow(EntitlementVerificationError);
+    // Entitlements must NOT have been cached.
+    expect(storage.savedCache).toBeNull();
+  });
+
+  it('resolveEntitlements() does NOT fall back to stale cache on signature failure', async () => {
+    const stalePayload: EntitlementsPayload = {
+      deviceId: 'existing-device-id',
+      entitlements: [{ tier: 'free', grantedAt: '2024-01-01T00:00:00Z' }],
+      expiryUtc: '2024-01-10T00:00:00Z',
+    };
+
+    const { client } = createTestClient({
+      deviceId: 'existing-device-id',
+      cached: {
+        deviceId: 'existing-device-id',
+        payload: JSON.stringify(stalePayload),
+        expiryUtcSeconds: 1704844800, // expired
+        fetchedAtUtcSeconds: 1704758400,
+      },
+      fetchResponses: {
+        '/v1/entitlements': {
+          status: 200,
+          body: jsonBytes(makeEnvelope(entitlementsPayload)),
+        },
+      },
+      verifyEnvelope: async () => false,
+    });
+
+    // Signature failure must NOT be masked by stale cache fallback.
+    await expect(client.resolveEntitlements()).rejects.toThrow(EntitlementVerificationError);
+  });
+
+  it('submitReceipt() throws and does NOT cache when signature fails', async () => {
+    const { client, storage } = createTestClient({
+      deviceId: 'existing-device-id',
+      fetchResponses: {
+        '/v1/entitlements/receipt': {
+          status: 200,
+          body: jsonBytes(makeEnvelope(receiptResponse)),
+        },
+      },
+      verifyEnvelope: async () => false,
+    });
+
+    await expect(client.submitReceipt('receipt-123', 'raw-data')).rejects.toThrow(
+      EntitlementVerificationError,
+    );
+    expect(storage.savedCache).toBeNull();
+  });
+
+  it('restorePurchases() throws and does NOT cache when signature fails', async () => {
+    const { client, storage } = createTestClient({
+      deviceId: 'existing-device-id',
+      fetchResponses: {
+        '/v1/entitlements/restore': {
+          status: 200,
+          body: jsonBytes(makeEnvelope(restoreResponse)),
+        },
+      },
+      verifyEnvelope: async () => false,
+    });
+
+    await expect(
+      client.restorePurchases([{ platformReceiptId: 'r1', platformReceipt: 'd1' }]),
+    ).rejects.toThrow(EntitlementVerificationError);
+    expect(storage.savedCache).toBeNull();
+  });
+
+  it('EntitlementVerificationError is distinguishable from EntitlementHttpError', async () => {
+    const { client } = createTestClient({
+      deviceId: 'existing-device-id',
+      fetchResponses: {
+        '/v1/entitlements': {
+          status: 200,
+          body: jsonBytes(makeEnvelope(entitlementsPayload)),
+        },
+      },
+      verifyEnvelope: async () => false,
+    });
+
+    try {
+      await client.resolveEntitlements();
+      fail('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(EntitlementVerificationError);
+      expect(err).not.toBeInstanceOf(EntitlementHttpError);
+      expect((err as EntitlementVerificationError).name).toBe('EntitlementVerificationError');
+      expect((err as EntitlementVerificationError).kid).toBe('test-kid');
+    }
   });
 });

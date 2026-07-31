@@ -122,9 +122,7 @@ export function betterSqliteDriver(db: unknown): SqliteDriver {
     }
     // better-sqlite3 accepts Buffer but not Uint8Array directly in all
     // versions; convert when we see a typed array.
-    return params.map((p) =>
-      p instanceof Uint8Array && !Buffer.isBuffer(p) ? Buffer.from(p) : p,
-    );
+    return params.map((p) => (p instanceof Uint8Array && !Buffer.isBuffer(p) ? Buffer.from(p) : p));
   };
 
   return {
@@ -143,10 +141,7 @@ export function betterSqliteDriver(db: unknown): SqliteDriver {
       const rows = handle.prepare(sql).all(...coerceParams(params));
       return Promise.resolve(rows as R[]);
     },
-    get<R = SqliteRow>(
-      sql: string,
-      params?: SqliteParams,
-    ): Promise<R | null> {
+    get<R = SqliteRow>(sql: string, params?: SqliteParams): Promise<R | null> {
       ensureOpen();
       const row = handle.prepare(sql).get(...coerceParams(params));
       return Promise.resolve((row ?? null) as R | null);

@@ -1,8 +1,18 @@
 // TourPlaybackScreen — Shows current tour state, synchronized caption, and controls.
+//
+// FIX 1: Next-POI indicator with name, distance, GPS liveness.
+// FIX 2: Replay button wired to `replayLastSegment`.
+// FIX 4: Phase labels rewritten as plain rider language.
+// FIX 5: Background degradation banner.
+// FIX 7: Mid-route boarding notice.
+// FIX 8: Accessibility and moving-vehicle ergonomics (44pt targets,
+//         WCAG-compliant contrast, live region announcements, removed
+//         maxFontSizeMultiplier cap).
 
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import type { TourState } from '../../../engine/src';
+import type { LatLng, TourState } from '../../../engine/src';
 import { OfflineMap } from '../../../map/src';
 import type { TilePackRef } from '../../../map/src';
 import {
@@ -10,6 +20,20 @@ import {
   formatPlaybackSpeedLabel,
   type PlaybackSpeed,
 } from '../wiring/playbackSpeed';
+import { NextPoiIndicator } from '../components/NextPoiIndicator';
+import { BackgroundBanner } from '../components/BackgroundBanner';
+import { MidRouteBoardingNotice } from '../components/MidRouteBoardingNotice';
+import {
+  detectMidRouteBoarding,
+  findNextPoi,
+  formatDistance,
+  getGpsStatus,
+  getRiderPhaseLabel,
+  precomputePoiAlongRoute,
+  resolveSegmentName,
+  type MidRouteBoardingInfo,
+  type NextPoiInfo,
+} from '../components/tourHelpers';
 
 export interface MapPlaybackContext {
   docsDir: string;
@@ -25,33 +49,33 @@ export interface TourPlaybackScreenProps {
   playbackSpeed: PlaybackSpeed;
   onPlaybackSpeedChange: (speed: PlaybackSpeed) => void;
   onEndTour: () => void;
+  /** Re-speak the most recently played segment. */
+  onReplayLastSegment: () => void;
+  /** Background status from LocationAdapter. */
+  backgroundStatus: { mode: 'background' | 'foreground-only'; reason?: string };
+  /** Wall-clock ms of the last accepted GPS fix. */
+  lastFixAtMs: number | null;
+  /** Map from poiId → human-readable display name. */
+  poiNames: ReadonlyMap<string, string>;
+  /** Route polyline for along-route projections. */
+  routePolyline: readonly LatLng[];
 }
 
-function getPlayingSegmentId(state: TourState): string | null {
+function getSession(state: TourState) {
   if (
     state.phase === 'Active' ||
     state.phase === 'Standby' ||
     state.phase === 'DeadReckoning' ||
     state.phase === 'Deviation'
   ) {
-    return state.session.playing?.segmentId ?? null;
+    return state.session;
   }
   return null;
 }
 
-function getPhaseLabel(phase: TourState['phase']): string {
-  switch (phase) {
-    case 'Active':
-      return 'Active — Listening for POIs';
-    case 'Standby':
-      return 'Standby — Waiting for motion';
-    case 'DeadReckoning':
-      return 'Dead Reckoning — GPS signal lost';
-    case 'Deviation':
-      return 'Deviation — Off route';
-    default:
-      return phase;
-  }
+function getPlayingSegmentId(state: TourState): string | null {
+  const session = getSession(state);
+  return session?.playing?.segmentId ?? null;
 }
 
 export function TourPlaybackScreen({
@@ -62,10 +86,73 @@ export function TourPlaybackScreen({
   playbackSpeed,
   onPlaybackSpeedChange,
   onEndTour,
+  onReplayLastSegment,
+  backgroundStatus,
+  lastFixAtMs,
+  poiNames,
+  routePolyline,
 }: TourPlaybackScreenProps): ReactElement {
+  const session = getSession(state);
   const segmentId = getPlayingSegmentId(state);
-  const phaseLabel = getPhaseLabel(state.phase);
+  const phaseLabel = getRiderPhaseLabel(state.phase);
+
+  // ─── FIX 1: Next-POI computation (memoize along-route precomputation) ───
+  const geofences = session?.geofences;
+  const poisAlongRoute = useMemo(() => {
+    if (!geofences) return [];
+    return precomputePoiAlongRoute(geofences, routePolyline);
+  }, [geofences, routePolyline]);
+
+  // Rider position along route.
+  const riderAlongRouteM = session?.lastAccepted?.alongRouteM ?? 0;
+  const riderCoord = session?.lastAccepted?.smoothed;
+  const consumed = useMemo(() => session?.consumed ?? new Set<string>(), [session?.consumed]);
+
+  const nextPoi: NextPoiInfo | null = useMemo(
+    () => findNextPoi(poisAlongRoute, riderAlongRouteM, consumed, poiNames, riderCoord),
+    [poisAlongRoute, riderAlongRouteM, consumed, poiNames, riderCoord],
+  );
+
+  const formattedDistance = nextPoi ? formatDistance(nextPoi.distanceM) : null;
+
+  // ─── GPS liveness (updates every second) ────────────────────────────────
+  const [nowMs, setNowMs] = useState(Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+  const gpsStatus = getGpsStatus(lastFixAtMs, nowMs);
+
+  // ─── FIX 7: Mid-route boarding detection (only on first fix) ────────────
+  const [midRouteInfo, setMidRouteInfo] = useState<MidRouteBoardingInfo | null>(null);
+  const midRouteCheckedRef = useRef(false);
+
+  useEffect(() => {
+    if (midRouteCheckedRef.current) return;
+    if (riderAlongRouteM > 0 && poisAlongRoute.length > 0) {
+      midRouteCheckedRef.current = true;
+      const info = detectMidRouteBoarding(poisAlongRoute, riderAlongRouteM, consumed);
+      setMidRouteInfo(info);
+      // Auto-dismiss after 12 seconds.
+      if (info) {
+        const timer = setTimeout(() => setMidRouteInfo(null), 12_000);
+        return () => clearTimeout(timer);
+      }
+    }
+    return undefined;
+  }, [riderAlongRouteM, poisAlongRoute, consumed]);
+
+  // ─── FIX 2: Replay enabled when something has played ───────────────────
+  const [hasPlayed, setHasPlayed] = useState(false);
+  useEffect(() => {
+    if (segmentId !== null) setHasPlayed(true);
+  }, [segmentId]);
+
+  // ─── FIX 1: Resolve segment name for 'Now playing' ─────────────────────
+  const playingName = segmentId ? resolveSegmentName(segmentId, poiNames) : null;
+
   const showCaption = caption !== null && caption !== '';
+  const showBackgroundBanner = backgroundStatus.mode === 'foreground-only';
 
   return (
     <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -78,6 +165,18 @@ export function TourPlaybackScreen({
         </Text>
       ) : null}
 
+      {/* FIX 5: Background degradation banner */}
+      {showBackgroundBanner ? <BackgroundBanner reason={backgroundStatus.reason} /> : null}
+
+      {/* FIX 7: Mid-route boarding notice */}
+      {midRouteInfo ? (
+        <MidRouteBoardingNotice
+          behindCount={midRouteInfo.behindCount}
+          aheadCount={midRouteInfo.aheadCount}
+          nextPoiName={poiNames.get(midRouteInfo.nextPoiId) ?? midRouteInfo.nextPoiId}
+        />
+      ) : null}
+
       {mapContext ? (
         <View style={styles.mapCard}>
           <OfflineMap
@@ -86,12 +185,18 @@ export function TourPlaybackScreen({
             {...(mapContext.initialCenter ? { initialCenter: mapContext.initialCenter } : {})}
             style={styles.map}
           />
-          <Text style={styles.mapHint}>Offline vector tiles from installed pack</Text>
         </View>
       ) : null}
 
+      {/* FIX 1: Next-POI indicator */}
+      <NextPoiIndicator
+        nextPoi={nextPoi}
+        gpsStatus={gpsStatus}
+        formattedDistance={formattedDistance}
+      />
+
       <View style={styles.statusCard}>
-        <Text style={styles.phaseLabel} accessibilityLabel={`Tour phase: ${phaseLabel}`}>
+        <Text style={styles.phaseLabel} accessibilityLabel={`Status: ${phaseLabel}`}>
           {phaseLabel}
         </Text>
 
@@ -99,26 +204,29 @@ export function TourPlaybackScreen({
           <Text style={styles.segmentLabel}>Now playing:</Text>
           <Text
             style={styles.segmentValue}
-            accessibilityLabel={segmentId ? `Playing segment ${segmentId}` : 'Waiting for next POI'}
+            accessibilityLabel={
+              playingName ? `Playing: ${playingName}` : 'Waiting for next landmark'
+            }
           >
-            {segmentId ?? 'Waiting for next POI...'}
+            {playingName ?? 'Waiting for next landmark…'}
           </Text>
         </View>
       </View>
 
+      {/* Caption with live region for accessibility announcements */}
       {showCaption ? (
         <View
           style={styles.captionCard}
           accessibilityRole="text"
-          accessibilityLabel={`Narration caption: ${caption}`}
+          accessibilityLabel={`Narration: ${caption}`}
+          accessibilityLiveRegion="polite"
         >
           <Text style={styles.captionLabel}>Caption</Text>
-          <Text style={styles.captionText} maxFontSizeMultiplier={2}>
-            {caption}
-          </Text>
+          <Text style={styles.captionText}>{caption}</Text>
         </View>
       ) : null}
 
+      {/* FIX 8: Speed buttons with 44pt minimum hit area */}
       <View style={styles.speedCard} accessibilityRole="adjustable">
         <Text style={styles.speedLabel}>Playback speed</Text>
         <View style={styles.speedRow}>
@@ -142,14 +250,30 @@ export function TourPlaybackScreen({
         </View>
       </View>
 
-      <TouchableOpacity
-        style={styles.endButton}
-        onPress={onEndTour}
-        accessibilityRole="button"
-        accessibilityLabel="End Tour"
-      >
-        <Text style={styles.endButtonText}>End Tour</Text>
-      </TouchableOpacity>
+      {/* FIX 2: Replay + End Tour buttons */}
+      <View style={styles.controlRow}>
+        <TouchableOpacity
+          style={[styles.replayButton, !hasPlayed && styles.replayButtonDisabled]}
+          onPress={onReplayLastSegment}
+          disabled={!hasPlayed}
+          accessibilityRole="button"
+          accessibilityLabel="Replay last narration"
+          accessibilityState={{ disabled: !hasPlayed }}
+        >
+          <Text style={[styles.replayButtonText, !hasPlayed && styles.replayButtonTextDisabled]}>
+            ↺ Replay
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.endButton}
+          onPress={onEndTour}
+          accessibilityRole="button"
+          accessibilityLabel="End Tour"
+        >
+          <Text style={styles.endButtonText}>End Tour</Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }
@@ -171,7 +295,7 @@ const styles = StyleSheet.create({
   },
   routeSubtitle: {
     fontSize: 14,
-    color: '#666',
+    color: '#374151',
     marginBottom: 16,
   },
   mapCard: {
@@ -183,12 +307,6 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 12,
     overflow: 'hidden',
-  },
-  mapHint: {
-    marginTop: 6,
-    fontSize: 11,
-    color: '#64748b',
-    textAlign: 'center',
   },
   statusCard: {
     width: '100%',
@@ -209,7 +327,7 @@ const styles = StyleSheet.create({
   },
   segmentLabel: {
     fontSize: 13,
-    color: '#666',
+    color: '#374151',
     fontWeight: '500',
   },
   segmentValue: {
@@ -227,7 +345,7 @@ const styles = StyleSheet.create({
   },
   captionLabel: {
     fontSize: 13,
-    color: '#666',
+    color: '#374151',
     fontWeight: '500',
     marginBottom: 8,
   },
@@ -242,7 +360,7 @@ const styles = StyleSheet.create({
   },
   speedLabel: {
     fontSize: 13,
-    color: '#666',
+    color: '#374151',
     fontWeight: '500',
     marginBottom: 8,
   },
@@ -254,11 +372,15 @@ const styles = StyleSheet.create({
   },
   speedButton: {
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 12,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#d4d4d4',
     backgroundColor: '#ffffff',
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   speedButtonSelected: {
     borderColor: '#2563eb',
@@ -272,11 +394,44 @@ const styles = StyleSheet.create({
   speedButtonTextSelected: {
     color: '#1d4ed8',
   },
+  controlRow: {
+    flexDirection: 'row',
+    gap: 16,
+    alignItems: 'center',
+  },
+  replayButton: {
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#2563eb',
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  replayButtonDisabled: {
+    borderColor: '#d4d4d4',
+    backgroundColor: '#f9fafb',
+  },
+  replayButtonText: {
+    color: '#2563eb',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  replayButtonTextDisabled: {
+    color: '#9ca3af',
+  },
   endButton: {
     backgroundColor: '#dc2626',
     paddingHorizontal: 32,
     paddingVertical: 14,
     borderRadius: 8,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   endButtonText: {
     color: '#ffffff',

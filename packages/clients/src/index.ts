@@ -23,10 +23,7 @@ export type {
   TourStateProvider,
 } from './http-client';
 
-export {
-  createCatalogClient,
-  CatalogHttpError,
-} from './catalog-client';
+export { createCatalogClient, CatalogHttpError, EnvelopeVerificationError } from './catalog-client';
 
 export type {
   CatalogClient,
@@ -34,6 +31,7 @@ export type {
   CatalogBundleEntry,
   CatalogListPayload,
   CatalogStorageProvider,
+  EnvelopeVerifier,
   ManifestLockAsset,
   ManifestLockPayload,
   ModerationPayload,
@@ -46,6 +44,7 @@ export type {
 export {
   createEntitlementClient,
   EntitlementHttpError,
+  EntitlementVerificationError,
 } from './entitlement-client';
 
 export type {

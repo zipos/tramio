@@ -9,13 +9,21 @@
 
 /**
  * Result of audio source selection for a POI trigger.
+ *
+ * The discriminated `source` field tells the caller how to handle the result:
+ * - 'audio': pre-rendered audio file at `assetPath`
+ * - 'tts': narrative markdown at `assetPath`, to be spoken by the TTS engine
+ * - 'unavailable': no content exists for this POI; the caller should skip it
+ *
+ * FIX 5: Added 'unavailable' variant so callers can distinguish "no content"
+ * from "empty path". Previously the function returned `assetPath: ''` when
+ * narratives were missing, which caused silent failures or TTS engine errors.
+ * @see Requirement 1.1
  */
-export interface AudioSourceResult {
-  source: 'audio' | 'tts';
-  language: string;
-  /** Path to the audio file (for 'audio' source) or narrative markdown (for 'tts' source) */
-  assetPath: string;
-}
+export type AudioSourceResult =
+  | { source: 'audio'; language: string; assetPath: string }
+  | { source: 'tts'; language: string; assetPath: string }
+  | { source: 'unavailable' };
 
 /**
  * Determines the audio source for a POI trigger using the fallback chain:
@@ -24,6 +32,15 @@ export interface AudioSourceResult {
  * 2. Narrative (TTS) in selected language
  * 3. Pre-rendered audio in default language
  * 4. Narrative (TTS) in default language
+ * 5. Pre-rendered audio in ANY available language (prefer audio over TTS)
+ * 6. Narrative (TTS) in ANY available language
+ * 7. Unavailable — no content exists for this POI
+ *
+ * FIX 5: Extended the chain with steps 5–7. Previously the function returned
+ * an empty assetPath when a POI had narratives in neither the selected nor
+ * the default language (incomplete translation on a freshly authored POI).
+ * Now it falls back to any available language (preferring pre-rendered audio)
+ * and returns an explicit 'unavailable' result when genuinely nothing exists.
  *
  * @param poiId - The POI identifier (reserved for future logging/telemetry)
  * @param selectedLanguage - User's selected language (ISO 639-1)
@@ -54,5 +71,30 @@ export function selectAudioSource(
   }
 
   // 4. Narrative (TTS) in default language
-  return { source: 'tts', language: defaultLanguage, assetPath: narratives[defaultLanguage] ?? '' };
+  if (narratives[defaultLanguage]) {
+    return { source: 'tts', language: defaultLanguage, assetPath: narratives[defaultLanguage] };
+  }
+
+  // 5. Pre-rendered audio in ANY available language (prefer audio over narrative
+  //    because pre-rendered audio has correct pronunciation and prosody).
+  if (audio) {
+    const audioLangs = Object.keys(audio);
+    for (const lang of audioLangs) {
+      if (audio[lang]) {
+        return { source: 'audio', language: lang, assetPath: audio[lang] };
+      }
+    }
+  }
+
+  // 6. Narrative (TTS) in ANY available language.
+  const narrativeLangs = Object.keys(narratives);
+  for (const lang of narrativeLangs) {
+    if (narratives[lang]) {
+      return { source: 'tts', language: lang, assetPath: narratives[lang] };
+    }
+  }
+
+  // 7. Genuinely nothing exists for this POI — return explicit unavailable
+  //    so the caller can skip the POI instead of playing silence or erroring.
+  return { source: 'unavailable' };
 }

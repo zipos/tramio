@@ -51,7 +51,7 @@ describe('isLoopbackOrIpc', () => {
     expect(isLoopbackOrIpc('http://0.0.0.0:5000/')).toBe(true);
   });
 
-  it('returns true for 10.0.x.x emulator addresses', () => {
+  it('returns true for 10.0.2.2 and 10.0.3.2 emulator addresses', () => {
     expect(isLoopbackOrIpc('http://10.0.2.2:3000/')).toBe(true);
     expect(isLoopbackOrIpc('http://10.0.3.2/')).toBe(true);
   });
@@ -64,6 +64,15 @@ describe('isLoopbackOrIpc', () => {
   it('returns false for non-loopback private IPs', () => {
     expect(isLoopbackOrIpc('http://192.168.1.1/')).toBe(false);
     expect(isLoopbackOrIpc('http://10.1.0.1/')).toBe(false);
+  });
+
+  it('returns false for other 10.0.x.x addresses (not emulator gateways)', () => {
+    // FIX 2: 10.0.0.0/16 is used by corporate/school networks; only the
+    // specific emulator gateway IPs (10.0.2.2, 10.0.3.2) are exempt.
+    expect(isLoopbackOrIpc('http://10.0.0.1/')).toBe(false);
+    expect(isLoopbackOrIpc('http://10.0.1.1/')).toBe(false);
+    expect(isLoopbackOrIpc('http://10.0.4.5/')).toBe(false);
+    expect(isLoopbackOrIpc('http://10.0.255.255/')).toBe(false);
   });
 
   it('returns false for unparseable URLs', () => {
@@ -84,9 +93,9 @@ describe('createHttpClient - tour-active guard', () => {
       fetch: makeFetch(),
     });
 
-    await expect(
-      client.request({ url: 'https://tramio.app/v1/catalog' }),
-    ).rejects.toThrow(TourActiveBlockError);
+    await expect(client.request({ url: 'https://tramio.app/v1/catalog' })).rejects.toThrow(
+      TourActiveBlockError,
+    );
   });
 
   it('allows loopback requests when tour is active', async () => {
@@ -208,7 +217,9 @@ describe('createHttpClient - metered connection policy', () => {
 describe('createHttpClient - request forwarding', () => {
   it('forwards method, headers, and body to the fetch implementation', async () => {
     let capturedUrl = '';
-    let capturedInit: { method: string; headers: Record<string, string>; body?: unknown } | undefined;
+    let capturedInit:
+      | { method: string; headers: Record<string, string>; body?: unknown }
+      | undefined;
 
     const mockFetch: FetchImpl = async (url, init) => {
       capturedUrl = url;
@@ -340,9 +351,9 @@ describe('createHttpClient - dynamic state', () => {
     tourActive = true;
 
     // Second request: tour active, should throw
-    await expect(
-      client.request({ url: 'https://tramio.app/v1/catalog' }),
-    ).rejects.toThrow(TourActiveBlockError);
+    await expect(client.request({ url: 'https://tramio.app/v1/catalog' })).rejects.toThrow(
+      TourActiveBlockError,
+    );
 
     // Tour ends
     tourActive = false;

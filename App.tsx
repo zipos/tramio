@@ -1,10 +1,14 @@
 // App.tsx — Tramio entry point.
+//
+// FIX 6: ErrorBoundary wraps all content to catch render crashes.
+// Threads poiNames, backgroundStatus, lastFixAtMs, replayLastSegment,
+// and routePolyline down to the playback screen (FIX 1, 2, 5, 7, 8).
 
-import type { ReactElement } from 'react';
 import { useState } from 'react';
+import type { ReactElement } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import type { StartTourConfig } from './packages/engine/src';
+import type { LatLng, StartTourConfig } from './packages/engine/src';
 import type { PackRef } from './packages/storage/src/paths';
 import { useTourEngine } from './packages/ui/src/wiring/useTourEngine';
 import { findDemoRoute } from './packages/ui/src/wiring/demoRoute';
@@ -13,11 +17,24 @@ import {
   TourPlaybackScreen,
   type MapPlaybackContext,
 } from './packages/ui/src/screens/TourPlaybackScreen';
+import { ErrorBoundary } from './packages/ui/src/components/ErrorBoundary';
 
 export default function App(): ReactElement {
-  const { state, caption, playbackSpeed, setPlaybackSpeed, startTour, endTour } = useTourEngine();
+  const {
+    state,
+    caption,
+    playbackSpeed,
+    setPlaybackSpeed,
+    startTour,
+    endTour,
+    replayLastSegment,
+    backgroundStatus,
+    lastFixAtMs,
+  } = useTourEngine();
   const [activeRouteTitle, setActiveRouteTitle] = useState<string | null>(null);
   const [mapContext, setMapContext] = useState<MapPlaybackContext | null>(null);
+  const [poiNames, setPoiNames] = useState<ReadonlyMap<string, string>>(new Map());
+  const [routePolyline, setRoutePolyline] = useState<readonly LatLng[]>([]);
 
   const handleStartTour = (
     config: StartTourConfig,
@@ -26,9 +43,22 @@ export default function App(): ReactElement {
       docsDir?: string;
       pack?: PackRef;
       narratives?: Readonly<Record<string, string>>;
+      tones?: Readonly<Record<string, 'standard' | 'memorial'>>;
     },
   ) => {
     setActiveRouteTitle(meta?.title ?? findDemoRoute(config.bundle.bundleId)?.title ?? null);
+
+    // Build the poiId → human name map from the demo route or the pack metadata.
+    const demoRoute = findDemoRoute(config.bundle.bundleId);
+    const names = new Map<string, string>();
+    if (demoRoute) {
+      for (const poi of demoRoute.pois) {
+        names.set(poi.poiId, poi.label);
+      }
+    }
+    setPoiNames(names);
+    setRoutePolyline(config.route);
+
     if (meta?.docsDir && meta?.pack) {
       const center = config.route[0];
       setMapContext({
@@ -39,7 +69,10 @@ export default function App(): ReactElement {
     } else {
       setMapContext(null);
     }
-    startTour(config, meta?.narratives ? { narratives: meta.narratives } : undefined);
+    startTour(config, {
+      ...(meta?.narratives ? { narratives: meta.narratives } : {}),
+      ...(meta?.tones ? { tones: meta.tones } : {}),
+    });
   };
 
   const handleEndTour = () => {
@@ -64,6 +97,11 @@ export default function App(): ReactElement {
             playbackSpeed={playbackSpeed}
             onPlaybackSpeedChange={setPlaybackSpeed}
             onEndTour={handleEndTour}
+            onReplayLastSegment={replayLastSegment}
+            backgroundStatus={backgroundStatus}
+            lastFixAtMs={lastFixAtMs}
+            poiNames={poiNames}
+            routePolyline={routePolyline}
           />
         );
       case 'Ended':
@@ -72,7 +110,7 @@ export default function App(): ReactElement {
             <Text style={styles.endedText} accessibilityRole="header">
               Tour ended
             </Text>
-            <Text style={styles.endedSubtext}>Returning to route selection...</Text>
+            <Text style={styles.endedSubtext}>Returning to route selection…</Text>
           </View>
         );
     }
@@ -81,7 +119,7 @@ export default function App(): ReactElement {
   return (
     <View style={styles.root}>
       <StatusBar style="auto" />
-      {content}
+      <ErrorBoundary onTourCleanup={handleEndTour}>{content}</ErrorBoundary>
     </View>
   );
 }
@@ -105,6 +143,6 @@ const styles = StyleSheet.create({
   },
   endedSubtext: {
     fontSize: 15,
-    color: '#666',
+    color: '#374151',
   },
 });

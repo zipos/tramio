@@ -26,6 +26,30 @@ const licenseSchema: JSONSchemaType = {
   },
 };
 
+const claimSchema: JSONSchemaType = {
+  type: 'object',
+  required: ['id', 'text', 'verdict'],
+  additionalProperties: false,
+  properties: {
+    id: { type: 'string', minLength: 1 },
+    text: { type: 'string', minLength: 1 },
+    verdict: { type: 'string', enum: ['confirmed', 'refuted', 'unverifiable', 'unchecked'] },
+    sourceUrl: { type: 'string', minLength: 1 },
+    checkedAt: { type: 'string' },
+  },
+};
+
+const reviewSchema: JSONSchemaType = {
+  type: 'object',
+  required: ['reviewedBy', 'reviewedAt', 'decision'],
+  additionalProperties: false,
+  properties: {
+    reviewedBy: { type: 'string', minLength: 1 },
+    reviewedAt: { type: 'string', minLength: 1 },
+    decision: { type: 'string', enum: ['approved', 'rejected', 'pending'] },
+  },
+};
+
 export const narrativeFrontmatterSchema: JSONSchemaType = {
   $schema: SCHEMA_DRAFT,
   $id: NARRATIVE_FRONTMATTER_SCHEMA_ID,
@@ -55,6 +79,12 @@ export const narrativeFrontmatterSchema: JSONSchemaType = {
       type: 'array',
       items: licenseSchema,
     },
+    claims: {
+      type: 'array',
+      items: claimSchema,
+    },
+    review: reviewSchema,
+    tone: { type: 'string', enum: ['standard', 'memorial'] },
   },
   // Requirements 14.5 + 20.4: when the narrative declares `tier: b2b`,
   // both `sponsor` and `disclosure` MUST be present and non-null,

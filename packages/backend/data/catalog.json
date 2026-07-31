@@ -1,9 +1,9 @@
 {
   "bundles": [
     {
-      "bundleId": "warsaw-tram-22-east",
+      "bundleId": "warsaw-bus-180-north",
       "version": "1.0.0",
-      "sizeBytes": 2781,
+      "sizeBytes": 31953,
       "requiredAppVersion": "0.1.0"
     }
   ]

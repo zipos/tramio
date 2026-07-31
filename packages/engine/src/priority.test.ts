@@ -66,9 +66,24 @@ describe('resolveOverlappingTriggers', () => {
   const SHARED_CENTER: LatLng = [51.0, 17.0];
 
   const geofences: readonly Geofence[] = [
-    makeGeofence({ poiId: 'poi-high', priority: 90, authorIndex: 0, geometry: { kind: 'circle', center: SHARED_CENTER, radiusMeters: 100 } }),
-    makeGeofence({ poiId: 'poi-mid', priority: 50, authorIndex: 1, geometry: { kind: 'circle', center: SHARED_CENTER, radiusMeters: 100 } }),
-    makeGeofence({ poiId: 'poi-low', priority: 20, authorIndex: 2, geometry: { kind: 'circle', center: SHARED_CENTER, radiusMeters: 100 } }),
+    makeGeofence({
+      poiId: 'poi-high',
+      priority: 90,
+      authorIndex: 0,
+      geometry: { kind: 'circle', center: SHARED_CENTER, radiusMeters: 100 },
+    }),
+    makeGeofence({
+      poiId: 'poi-mid',
+      priority: 50,
+      authorIndex: 1,
+      geometry: { kind: 'circle', center: SHARED_CENTER, radiusMeters: 100 },
+    }),
+    makeGeofence({
+      poiId: 'poi-low',
+      priority: 20,
+      authorIndex: 2,
+      geometry: { kind: 'circle', center: SHARED_CENTER, radiusMeters: 100 },
+    }),
   ];
 
   it('selects the highest-priority POI as winner when multiple overlap', () => {
@@ -86,10 +101,25 @@ describe('resolveOverlappingTriggers', () => {
   it('returns the triggered POI as winner when it is the only candidate', () => {
     // Only poi-high's geofence contains the position
     const isolatedGeofences: readonly Geofence[] = [
-      makeGeofence({ poiId: 'poi-high', priority: 90, authorIndex: 0, geometry: { kind: 'circle', center: SHARED_CENTER, radiusMeters: 100 } }),
-      makeGeofence({ poiId: 'poi-far', priority: 95, authorIndex: 1, geometry: { kind: 'circle', center: [52.0, 18.0], radiusMeters: 50 } }),
+      makeGeofence({
+        poiId: 'poi-high',
+        priority: 90,
+        authorIndex: 0,
+        geometry: { kind: 'circle', center: SHARED_CENTER, radiusMeters: 100 },
+      }),
+      makeGeofence({
+        poiId: 'poi-far',
+        priority: 95,
+        authorIndex: 1,
+        geometry: { kind: 'circle', center: [52.0, 18.0], radiusMeters: 50 },
+      }),
     ];
-    const result = resolveOverlappingTriggers('poi-high', isolatedGeofences, SHARED_CENTER, new Set());
+    const result = resolveOverlappingTriggers(
+      'poi-high',
+      isolatedGeofences,
+      SHARED_CENTER,
+      new Set(),
+    );
     expect(result.winnerId).toBe('poi-high');
     expect(result.skippedIds).toHaveLength(0);
   });
@@ -105,8 +135,18 @@ describe('resolveOverlappingTriggers', () => {
 
   it('uses authorIndex as tie-breaker when priorities are equal', () => {
     const tiedGeofences: readonly Geofence[] = [
-      makeGeofence({ poiId: 'poi-later', priority: 50, authorIndex: 3, geometry: { kind: 'circle', center: SHARED_CENTER, radiusMeters: 100 } }),
-      makeGeofence({ poiId: 'poi-earlier', priority: 50, authorIndex: 1, geometry: { kind: 'circle', center: SHARED_CENTER, radiusMeters: 100 } }),
+      makeGeofence({
+        poiId: 'poi-later',
+        priority: 50,
+        authorIndex: 3,
+        geometry: { kind: 'circle', center: SHARED_CENTER, radiusMeters: 100 },
+      }),
+      makeGeofence({
+        poiId: 'poi-earlier',
+        priority: 50,
+        authorIndex: 1,
+        geometry: { kind: 'circle', center: SHARED_CENTER, radiusMeters: 100 },
+      }),
     ];
     const result = resolveOverlappingTriggers('poi-later', tiedGeofences, SHARED_CENTER, new Set());
     expect(result.winnerId).toBe('poi-earlier');
@@ -124,7 +164,12 @@ describe('resolveOverlappingTriggers', () => {
 
   it('returns no skipped POIs when only one geofence overlaps', () => {
     const singleGeofence: readonly Geofence[] = [
-      makeGeofence({ poiId: 'poi-only', priority: 50, authorIndex: 0, geometry: { kind: 'circle', center: SHARED_CENTER, radiusMeters: 100 } }),
+      makeGeofence({
+        poiId: 'poi-only',
+        priority: 50,
+        authorIndex: 0,
+        geometry: { kind: 'circle', center: SHARED_CENTER, radiusMeters: 100 },
+      }),
     ];
     const result = resolveOverlappingTriggers('poi-only', singleGeofence, SHARED_CENTER, new Set());
     expect(result.winnerId).toBe('poi-only');

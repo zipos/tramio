@@ -10,7 +10,7 @@
  * Production runs against the same code: a longer-lived process simply
  * pre-loads the same fixtures from disk at startup.
  */
-import { readFile, stat } from 'node:fs/promises';
+import { stat, open } from 'node:fs/promises';
 import { join, normalize, sep } from 'node:path';
 import type {
   CatalogBundleEntry,
@@ -105,8 +105,14 @@ export function createBackendStore(opts: BackendStoreOptions = {}): BackendStore
   }
   const receipts = new Map<string, RecordedReceipt>(); // key = `${deviceId}::${platformReceiptId}`
   const disabled = new Set<string>(opts.disabledSegmentIds ?? []);
-  const defaultExpiry =
-    opts.defaultEntitlementExpiry ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+  // Compute a fresh expiry per request. The previous implementation cached a
+  // single Date at construction time, which became stale after 24h and caused
+  // clients to refetch on every call.
+  const computeExpiry =
+    opts.defaultEntitlementExpiry !== undefined
+      ? () => opts.defaultEntitlementExpiry!
+      : () => new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
   return {
     listCatalog(): CatalogListPayload {
@@ -152,7 +158,7 @@ export function createBackendStore(opts: BackendStoreOptions = {}): BackendStore
       }
       return {
         entitlements: [...grants, ...fromReceipts],
-        expiryUtc: defaultExpiry,
+        expiryUtc: computeExpiry(),
       };
     },
 
@@ -167,7 +173,7 @@ export function createBackendStore(opts: BackendStoreOptions = {}): BackendStore
         deviceId,
         platformReceiptId,
         entitlements: [...grant],
-        expiryUtc: defaultExpiry,
+        expiryUtc: computeExpiry(),
       };
       receipts.set(key, recorded);
       return recorded;
@@ -184,7 +190,7 @@ export function createBackendStore(opts: BackendStoreOptions = {}): BackendStore
       const seeded = entitlementsByDevice.get(deviceId) ?? [];
       return {
         entitlements: [...seeded, ...collected],
-        expiryUtc: defaultExpiry,
+        expiryUtc: computeExpiry(),
       };
     },
 
@@ -216,12 +222,27 @@ function makeMemoryReadResult(bytes: Buffer): AssetReadResult {
   };
 }
 
+/**
+ * Ranged read using a FileHandle positional read — only the requested
+ * byte range is allocated. Previous implementation loaded the entire file
+ * into memory and then sliced, which OOM'd the process on concurrent
+ * small-range requests against large tile assets.
+ *
+ * @see FIX 4 — backend ranged reads load the entire file into memory
+ */
 function makeFileReadResult(filePath: string, size: number): AssetReadResult {
   return {
     sizeBytes: size,
     read: async (start, end) => {
-      const fh = await readFile(filePath);
-      return fh.subarray(start, end + 1);
+      const length = end - start + 1;
+      const fh = await open(filePath, 'r');
+      try {
+        const buf = Buffer.allocUnsafe(length);
+        const { bytesRead } = await fh.read(buf, 0, length, start);
+        return buf.subarray(0, bytesRead);
+      } finally {
+        await fh.close();
+      }
     },
   };
 }

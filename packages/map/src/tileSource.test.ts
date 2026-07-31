@@ -31,9 +31,7 @@ describe('resolveOfflineTileSource', () => {
     });
 
     expect(result.valid).toBe(true);
-    expect(result.tileUrl).toBe(
-      'file:///data/docs/packs/bundle-a/2.0.0/tiles/{z}/{x}/{y}.pbf',
-    );
+    expect(result.tileUrl).toBe('file:///data/docs/packs/bundle-a/2.0.0/tiles/{z}/{x}/{y}.pbf');
   });
 
   it('strips multiple trailing slashes from docsDir', () => {

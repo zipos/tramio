@@ -158,7 +158,10 @@ function matchExactLanguage(
  * walking the documented fallback chain. Each fallback step logs a
  * non-fatal warning so misses are observable.
  */
-export function resolveVoice(input: ResolveVoiceInput, sink: WarningSink = noopWarningSink): ResolveVoiceResult {
+export function resolveVoice(
+  input: ResolveVoiceInput,
+  sink: WarningSink = noopWarningSink,
+): ResolveVoiceResult {
   const language = normalizeLang(input.language);
   const region = normalizeRegion(input.region);
   const defaultLanguage = normalizeLang(input.defaultLanguage);

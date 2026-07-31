@@ -12,6 +12,15 @@
 //   - Feed each raw fix through `step()` (accuracy gate, spike rejection,
 //     smoothing, dwell, direction filter).
 //   - Emit `LocationAccepted` and `GeofenceDwell` engine events.
+//
+// BUG 4 FIX: Monotonic `cancelled` flag prevents async leaks. Once stop()
+// is called, no further location watches or background updates can start,
+// even if an awaited permission prompt resolves after the tour has ended.
+//
+// BUG 5 FIX: After a fire, advance the stored pipeline state's consumed
+// set so the pipeline short-circuits that POI on subsequent fixes.
+//
+// BUG 6 FIX: Track and expose background status so the UI can warn.
 
 import * as Location from 'expo-location';
 import type { Geofence, LatLng } from '../../../engine/src';
@@ -23,6 +32,7 @@ import {
   unbindLocationSession,
   type LocationAdapterEvents,
 } from './backgroundLocationTask';
+import type { BackgroundStatus } from './TourRuntime';
 
 export type { LocationAdapterEvents };
 
@@ -38,6 +48,13 @@ export class LocationAdapter {
   private readonly geofences: readonly Geofence[];
   private readonly events: LocationAdapterEvents;
   private active = false;
+
+  // BUG 4 FIX: monotonic cancellation flag. Once set, no async continuation
+  // may create watches or start background updates.
+  private cancelled = false;
+
+  /** Callback wired by TourRuntime to receive background status changes. */
+  onBackgroundStatusChange: ((status: BackgroundStatus) => void) | null = null;
 
   constructor(
     route: readonly LatLng[],
@@ -55,6 +72,10 @@ export class LocationAdapter {
    */
   async start(): Promise<void> {
     const { status } = await Location.requestForegroundPermissionsAsync();
+
+    // BUG 4 FIX: check cancellation after every await.
+    if (this.cancelled) return;
+
     if (status !== Location.PermissionStatus.GRANTED) {
       this.events.onPermissionDenied();
       return;
@@ -66,12 +87,18 @@ export class LocationAdapter {
     // Foreground watch first — reliable on all platforms and permission states.
     await this.startForegroundWatch();
 
+    // BUG 4 FIX: check cancellation after foreground watch.
+    if (this.cancelled) return;
+
     // Background is optional; never tear down a working foreground watch on failure.
     await this.tryEnableBackgroundUpdates();
   }
 
-  /** Stop watching and release the subscription. */
+  /** Stop watching and release the subscription. Monotonic — cannot be undone. */
   stop(): void {
+    // BUG 4 FIX: set the permanent cancellation flag so no async
+    // continuation can re-arm watches after this point.
+    this.cancelled = true;
     this.active = false;
     if (this.watch) {
       this.watch.remove();
@@ -83,7 +110,9 @@ export class LocationAdapter {
 
   private async startForegroundWatch(): Promise<void> {
     if (this.watch) return;
-    this.watch = await Location.watchPositionAsync(
+    if (this.cancelled) return;
+
+    const subscription = await Location.watchPositionAsync(
       {
         accuracy: Location.Accuracy.High,
         timeInterval: 1000,
@@ -91,26 +120,71 @@ export class LocationAdapter {
       },
       (loc) => ingestLocationFix(loc),
     );
+
+    // BUG 4 FIX: if cancelled while awaiting, immediately remove.
+    if (this.cancelled) {
+      subscription.remove();
+      return;
+    }
+
+    this.watch = subscription;
   }
 
   private async tryEnableBackgroundUpdates(): Promise<void> {
     try {
+      if (this.cancelled) return;
+
       let bgStatus = (await Location.getBackgroundPermissionsAsync()).status;
+
+      if (this.cancelled) return;
+
       if (bgStatus !== Location.PermissionStatus.GRANTED) {
         bgStatus = (await Location.requestBackgroundPermissionsAsync()).status;
       }
+
+      if (this.cancelled) return;
+
       if (bgStatus !== Location.PermissionStatus.GRANTED) {
+        this.onBackgroundStatusChange?.({
+          mode: 'foreground-only',
+          reason: 'permission-denied',
+        });
         return;
       }
 
       await startBackgroundLocationUpdates();
+
+      // BUG 4 FIX: if cancelled while starting background updates, stop them.
+      if (this.cancelled) {
+        void stopBackgroundLocationUpdates().catch(() => undefined);
+        return;
+      }
+
+      // Background updates are running — remove the foreground watch to avoid
+      // duplicate fixes (background delivery also fires while foregrounded).
       if (this.watch) {
         this.watch.remove();
         this.watch = null;
       }
-    } catch {
-      // Android OEM FGS / TaskManager can fail right after the settings sheet;
-      // foreground watch keeps the tour running.
+
+      this.onBackgroundStatusChange?.({ mode: 'background' });
+    } catch (err: unknown) {
+      // BUG 6 FIX: categorize the failure so the UI can show a reason.
+      if (this.cancelled) return;
+
+      const message = err instanceof Error ? err.message : '';
+      if (message.includes('POST_NOTIFICATIONS')) {
+        this.onBackgroundStatusChange?.({
+          mode: 'foreground-only',
+          reason: 'notifications-denied',
+        });
+      } else {
+        this.onBackgroundStatusChange?.({
+          mode: 'foreground-only',
+          reason: 'unavailable',
+        });
+      }
+      // Foreground watch keeps the tour running — no rethrow.
     }
   }
 }

@@ -38,14 +38,14 @@ own `package.json`, `tsconfig.json`, and Jest config.
 
 ### Packages
 
-- `packages/authoring/` — Content_Bundle JSON Schema validator + CLI (`bundle-validate`)
+- `packages/authoring/` — Content_Bundle JSON Schema validator + CLI (`bundle-validate`); review gate with `claims[]` verdicts, `review` block, and `--strict` mode that refuses unreviewed or refuted content
 - `packages/engine/` — Pure Tour_Engine reducer (state machine, geofence pipeline, priority comparator, audio source selection, focus handling)
-- `packages/storage/` — StorageManager (SQLite, atomic writes, pack downloader, LRU budget, GTFS parser/feed/policy)
+- `packages/storage/` — StorageManager (SQLite, atomic writes, pack downloader, LRU budget, GTFS parser/feed/policy); packLoader loads all manifest languages and exposes per-POI tone (`'standard' | 'memorial'`)
 - `packages/clients/` — HTTP chokepoint, Catalog_Client, Entitlement_Client
 - `packages/backend/` — Self-hosted Fastify backend with all API endpoints + Ed25519 signing
 - `packages/native/` — Custom turbo modules: Location_Service, Audio_Service, TTS_Engine (iOS + Android). **NOT wired into the build — see "Runtime Architecture".**
 - `packages/capability/` — OS_MATRIX, runtime probes, `useCapabilities()` hook, flag-driven command translators
-- `packages/map/` — MapLibre GL Native offline tile component (`OfflineMap`) — built but not yet mounted
+- `packages/map/` — MapLibre GL Native offline tile component (`OfflineMap`); type-level support for route-polyline, POI, and user-position overlays (props declared but rendering not yet wired)
 - `packages/branding/` — Brand config (display name, domains, bundle IDs)
 - `packages/ui/` — Screens (route selection, tour playback) + wiring layer (TourRuntime, useTourEngine, locationAdapter)
 
@@ -95,6 +95,7 @@ for these exist; the logic is stubbed/partial.
 
 - `OfflineMap.tsx` — MapLibre GL Native component, offline-only tile source from `file://` paths
 - `tileSource.ts` — Resolves `{bundleId, version}` → `file://.../tiles/{z}/{x}/{y}.pbf`
+- `types.ts` — Declares `route`, `pois` (with consumed flag), and `userPosition` overlay props (typed but not yet rendered in OfflineMap.tsx)
 
 ### Capability (`packages/capability/src/`)
 
@@ -164,24 +165,85 @@ path reads Markdown from a downloaded Offline_Pack via Storage_Manager).
 4. **Catalog required for full flow** — run `npm run backend:dev` and
    `npm run pack:build-warsaw` before device download. Embedded demo route still
    works offline without a pack.
-5. **Placeholder coordinates** — demo POI positions are approximate; they need
-   surveying against real stop/GTFS data before they'll trigger accurately.
+5. **Stop-interpolated route geometry** — POI centres are real OSM stop
+   platforms, but the route polyline interpolates straight lines stop-to-stop
+   rather than following the road. Good enough for along-route projection and
+   the preview sketch; replace with ZTM GTFS `shapes.txt` for true geometry.
+   No GTFS API key is required for stop positions — Overpass is keyless.
 
 ---
 
 ## Demo Content
 
-Demo routes live in **`packages/ui/src/wiring/demoRoute.ts`** (geometry +
-metadata). Narrative copy is in **`packages/ui/src/wiring/sampleNarratives.ts`**.
+Demo routes live in **`packages/ui/src/wiring/demoRoute.ts`** (registry) with the
+flagship route defined in **`packages/ui/src/wiring/warsaw180.ts`** (stops,
+POIs, geofences) and its copy in
+**`packages/ui/src/wiring/warsaw180Narratives.ts`**.
 
-Currently one route: **Warsaw Tram 22 — East (summer)** — Praga → Plac Starynkiewicza:
+Currently one route: **Warsaw Bus 180 — northbound** — Wilanów → Żoliborz:
 
-- POIs: PGE Narodowy, Powiśle, Plac Starynkiewicza (terminus until ~2 Aug)
-- Catalog pack: `packages/backend/data/packs/warsaw-tram-22-east/1.0.0/` (build via `npm run pack:build-warsaw`)
+- 36 stops (OSM relation 15885943, stops 0–35: Wilanów → PKP Powązki), 24 authored POIs, PL + EN
+- Coordinates are **real surveyed stop platforms** pulled from the public
+  Overpass API (no key required) — see the provenance block at the top of
+  `warsaw180.ts` for the exact query
+- Catalog pack: `packages/backend/data/packs/warsaw-bus-180-north/1.0.0/` (build via `npm run pack:build-warsaw`)
 - `RouteSelectionScreen`: Download Pack → Start Tour when catalog is up; embedded fallback if offline
 
-Coordinates and copy are approximate demo data — replace with surveyed POI
-positions and authored narratives (ideally GTFS-derived) before release.
+**Northbound only.** The southbound relation (15885944) serves the opposite
+kerb, which inverts every "on your left / on your right" cue, so it must ship
+as a separate bundle with its own narratives. `Geofence.directionFilter` is
+deliberately left unset until it is validated on a real ride — an untested
+filter silently suppresses every trigger.
+
+**The retired route.** `warsaw-tram-22-east` has been deleted (embedded route,
+pack, and manifest). It described the summer-shortened tram 22, which reverted
+to its normal alignment in early August 2026, so both its narration and its
+terminus POI were about to become false. Bus 180 is a permanent year-round
+line, which makes it safe to author against.
+
+### Content authoring rules
+
+Encoded as tests in `packages/ui/src/wiring/warsaw180.test.ts` (19 assertions),
+because each of these was a real bug in the first draft:
+
+1. One idea per stop, inside a spoken-duration budget — centre-city stops are
+   250–400 m apart, so a long segment is still talking when the next POI fires.
+2. Orientation by left/right, never compass heading.
+3. No statistics as flavour, and no factual claim without a source.
+4. No instructions about the app inside the narration; app affordances belong
+   in the UI.
+5. Memorial material (`MEMORIAL_POI_IDS`) carries `tone: 'memorial'` and is
+   delivered at a reduced rate. Narrating Holocaust sites in the same wry
+   register as nightlife tips is the single largest reputational risk in the
+   content, so the register shift is enforced, not left to the writer.
+6. No two geofences may overlap — overlapping circles make which POI fires
+   depend on GPS noise.
+
+### Factual-accuracy process
+
+The review gate in `packages/authoring` is **load-bearing** — it exists because
+the AI-drafted narration contained factual errors that would have reached
+users if not caught manually. Three real errors motivated the gate:
+
+1. **Ghetto wall misattribution.** A cemetery boundary wall was described as
+   a surviving section of the Warsaw Ghetto wall. It is not.
+2. **Fibreglass leaves.** An artwork's leaves were described as "originally
+   natural, later replaced with fibreglass." In fact the leaves were always
+   fibreglass — that is the point of the installation.
+3. **Non-existent metro station.** A station was described as "under
+   construction" when it has never been built. The project owner, who lives
+   in Warsaw, corrected this — both Muranów and Plac Konstytucji remain
+   unbuilt on the M1 line.
+
+All three errors passed an AI confidence threshold but failed trivial
+local-knowledge checks. The review gate enforces `claims[]` with a verdict
+(`confirmed` / `refuted` / `unchecked`) and a source URL.
+`bundle-validate --strict` refuses any bundle with an unreviewed narrative
+or an `unchecked` / `unverifiable` claim. A `refuted` claim blocks the
+bundle in **all** modes, not just strict.
+
+The system trusts humans to catch the errors that models cannot distinguish
+from plausible-sounding text. No bundle ships without a signed-off review.
 
 ### Storage Option A (current)
 
@@ -202,26 +264,56 @@ npm run backend:dev         # http://127.0.0.1:8080 — set CATALOG_BASE_URL to 
 npx expo prebuild --clean   # after adding MapLibre native dep
 ```
 
-### What happens on a real Warsaw tram right now
+### What happens on a real Warsaw bus right now
 
-Start Tour → permission prompt → GPS watch begins → fixes run through the
-geofence pipeline → TTS narration fires when the smoothed position dwells
-inside one of the three Warsaw POI circles for 3s. Between POIs the screen
-shows "Active — Listening for POIs / Waiting for next POI...". With background
-location permission granted, fixes continue while the screen is locked; without
-it, updates pause when the app backgrounds (limitation #1 above).
+Board the 180 at Wilanów → Start Tour → permission prompt → GPS watch begins →
+fixes run through the geofence pipeline → TTS narration fires when the smoothed
+position dwells 3 s inside one of the 24 authored POI circles. Memorial
+segments are spoken at a reduced rate. Between POIs the screen shows
+"Active — Listening for POIs / Waiting for next POI...". With background
+location permission granted, fixes continue while the screen is locked;
+without it, updates pause when the app backgrounds (limitation #1 above).
 
 ---
 
 ## Suggested Next Steps (highest value first)
 
-1. **Real vector tiles** — replace the placeholder `.pbf` in the dev pack with an
-   OSM corridor extract (tippecanoe / Planetiler) for Praga → Starynkiewicza.
-2. **GPS dot + route overlay** on `OfflineMap` (ShapeSource line + user position).
-3. **Real Warsaw content** — survey stop coordinates against GTFS; validate bundle with `bundle-validate`.
-4. **Deviation prompt UI** — engine hooks exist; classification not wired in `reduceActive`.
-5. **Re-enable deferred engine features** as needed (Standby, Dead Reckoning,
-   entitlement gating) — reducer hooks already exist.
+1. **Field-test bus 180 northbound end to end** — ride Wilanów → Żoliborz with
+   the screen locked and log which of the 24 POIs actually fire. This is the
+   **only** way to validate (a) the background-location path (limitation #1),
+   (b) the left/right side-of-street claims in `warsaw180.ts`, and (c) whether
+   the geofence radii are well-sized for real GPS noise on a moving bus. **No
+   one has ridden the 180 with this build yet** — these are unverified.
+2. **Enable `directionFilter`** on the 180 bundle — the filter is implemented
+   in the geofence pipeline (Stage 5, `pipeline.ts`), but left unset on the
+   authored geofences because an untested filter would silently suppress every
+   trigger. Enable it only after field data shows a safe tolerance.
+3. **GTFS ingest** — replace the interpolated polyline with ZTM `shapes.txt`
+   and add `scheduledOffsetSec` per stop (currently `null`). The parser in
+   `packages/storage/src/gtfs/` already exists.
+4. **Author the southbound 180 bundle** — the southbound relation (15885944)
+   serves the opposite kerb, which inverts every left/right cue. It must ship
+   as a separate bundle with its own narratives.
+5. **Real vector tiles** — replace the placeholder `.pbf` in the dev pack with
+   an OSM corridor extract (tippecanoe / Planetiler) buffered along the 180
+   alignment.
+6. **Map overlays** — `OfflineMapProps` already declares `route`, `pois`, and
+   `userPosition` props, but `OfflineMap.tsx` does not render them yet. Wire
+   the ShapeSource/LineLayer and SymbolLayer/CircleLayer so the playback screen
+   shows a GPS dot + route + POI markers.
+7. **OSM attribution overlay** — a persistent overlay component on every
+   MapLibre view (task 10.2); currently missing.
+8. **Pre-rendered audio** — the engine's `selectAudioSource()` fallback chain
+   already prefers pack audio over TTS. Render each segment with a cloud
+   voice, normalise to ~−16 LUFS mono, ship as AAC/Opus.
+9. **High-accuracy indicator** — `TourPlaybackScreen` does not yet show when
+   the location mode is `tour-approach` or `reconcile`.
+10. **Deviation prompt UI** — engine hooks exist; classification is not yet
+    wired in `reduceActive`. The 5-minute auto-end timer works.
+11. **Remaining engine property tests** — P4 (priority), P9 (audio source),
+    P10 (focus), P18 (capability fallback), P20 (Device_Id) are unwritten.
+12. **Entitlement-aware playback filtering** — the reducer does not yet gate
+    segments by entitlement tier or emit B2B disclosure pre-rolls.
 
 ---
 
@@ -248,10 +340,15 @@ it, updates pause when the app backgrounds (limitation #1 above).
 | Priority comparator                  | `packages/engine/src/priority.ts`                                         |
 | UI screens                           | `packages/ui/src/screens/`                                                |
 | Wiring (runtime/hook/adapter)        | `packages/ui/src/wiring/`                                                 |
+| Route 180 stops/POIs/geofences       | `packages/ui/src/wiring/warsaw180.ts`                                     |
+| Route 180 narratives + tone          | `packages/ui/src/wiring/warsaw180Narratives.ts`                           |
+| Content authoring guards             | `packages/ui/src/wiring/warsaw180.test.ts`                                |
+| Dev pack builder                     | `tooling/build-warsaw-dev-pack.mjs`                                       |
 | Background location task             | `packages/ui/src/wiring/backgroundLocationTask.ts`                        |
 | Custom native (not wired)            | `packages/native/`                                                        |
 | Storage Manager                      | `packages/storage/src/manager.ts`                                         |
 | Pack Downloader                      | `packages/storage/src/downloader.ts`                                      |
+| Pack Loader (multi-lang + tone)      | `packages/storage/src/packLoader.ts`                                      |
 | Budget                               | `packages/storage/src/budget.ts`                                          |
 | GTFS                                 | `packages/storage/src/gtfs/`                                              |
 | HTTP / Catalog / Entitlement clients | `packages/clients/src/`                                                   |
@@ -319,9 +416,7 @@ $ADB shell monkey -p app.tramio.client -c android.intent.category.LAUNCHER 1
 ## Spec / Task Tracking
 
 The original spec lives in `.kiro/specs/urban-narrative-mvp/`
-(`requirements.md`, `design.md`, `tasks.md`). Roughly 38 of 87 spec tasks are
-checked off in `tasks.md`; several more (audio source selection, focus
-handling, wiring, the two screens) are implemented but not yet re-marked. The
-app currently has a complete vertical slice: engine → wiring → UI → demo
-content, building and running as an APK. Tests were intentionally deferred for
-the deferred engine features and UI.
+(`requirements.md`, `design.md`, `tasks.md`). As of the 2026-07-31 audit,
+**45 of 87** spec tasks are checked off in `tasks.md`. The app has a
+complete vertical slice: engine → wiring → UI → demo content, building and
+running as an APK with 640 passing tests.

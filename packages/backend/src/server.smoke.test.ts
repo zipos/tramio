@@ -68,7 +68,7 @@ function buildHarness() {
     disabledSegmentIds: ['poi-42'],
     defaultEntitlementExpiry: '2099-01-01T00:00:00.000Z',
   });
-  const server = buildServer({ store, keys });
+  const server = buildServer({ store, keys, receiptMode: 'stub' });
   return { server, keys, store, manifest };
 }
 

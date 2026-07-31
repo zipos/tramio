@@ -1,11 +1,13 @@
 import {
   createCatalogClient,
   CatalogHttpError,
+  EnvelopeVerificationError,
   type CatalogStorageProvider,
   type CatalogListPayload,
   type ManifestLockPayload,
   type ModerationPayload,
   type SignedEnvelope,
+  type EnvelopeVerifier,
 } from './catalog-client';
 import {
   createHttpClient,
@@ -56,11 +58,16 @@ function jsonBytes(obj: unknown): Uint8Array {
  * Creates a mock fetch that responds based on URL patterns.
  */
 function makeFetch(
-  responses: Record<string, { status: number; body: Uint8Array; headers?: Record<string, string | null> }>,
+  responses: Record<
+    string,
+    { status: number; body: Uint8Array; headers?: Record<string, string | null> }
+  >,
 ): FetchImpl {
   return async (url, _init) => {
     // Find matching response by checking if the URL starts with any key.
-    let matched: { status: number; body: Uint8Array; headers?: Record<string, string | null> } | undefined;
+    let matched:
+      | { status: number; body: Uint8Array; headers?: Record<string, string | null> }
+      | undefined;
     for (const [pattern, resp] of Object.entries(responses)) {
       if (url.includes(pattern)) {
         matched = resp;
@@ -90,16 +97,21 @@ function makeFetch(
 }
 
 function createTestClient(opts: {
-  fetchResponses?: Record<string, { status: number; body: Uint8Array; headers?: Record<string, string | null> }>;
+  fetchResponses?: Record<
+    string,
+    { status: number; body: Uint8Array; headers?: Record<string, string | null> }
+  >;
   tourActive?: boolean;
   unmetered?: boolean;
   installed?: Array<{ bundleId: string; version: string }>;
+  verifyEnvelope?: EnvelopeVerifier;
 }) {
   const {
     fetchResponses = {},
     tourActive = false,
     unmetered = true,
     installed = [],
+    verifyEnvelope = async () => true,
   } = opts;
 
   const networkInfo = makeNetworkInfo(unmetered);
@@ -115,6 +127,7 @@ function createTestClient(opts: {
     http,
     networkInfo,
     storage,
+    verifyEnvelope,
   });
 
   return { client, storage, networkInfo };
@@ -127,8 +140,18 @@ function createTestClient(opts: {
 describe('CatalogClient.probe', () => {
   const catalogPayload: CatalogListPayload = {
     bundles: [
-      { bundleId: 'wroclaw-tram-7', version: '1.4.2', sizeBytes: 50_000_000, requiredAppVersion: '1.0.0' },
-      { bundleId: 'wroclaw-tram-3', version: '2.0.0', sizeBytes: 30_000_000, requiredAppVersion: '1.0.0' },
+      {
+        bundleId: 'wroclaw-tram-7',
+        version: '1.4.2',
+        sizeBytes: 50_000_000,
+        requiredAppVersion: '1.0.0',
+      },
+      {
+        bundleId: 'wroclaw-tram-3',
+        version: '2.0.0',
+        sizeBytes: 30_000_000,
+        requiredAppVersion: '1.0.0',
+      },
     ],
     fetchedAt: '2025-01-15T10:00:00Z',
   };
@@ -280,9 +303,9 @@ describe('CatalogClient.fetchManifestLock', () => {
       },
     });
 
-    await expect(
-      client.fetchManifestLock('nonexistent', '1.0.0'),
-    ).rejects.toThrow(CatalogHttpError);
+    await expect(client.fetchManifestLock('nonexistent', '1.0.0')).rejects.toThrow(
+      CatalogHttpError,
+    );
   });
 
   it('URL-encodes bundleId and version', async () => {
@@ -312,6 +335,7 @@ describe('CatalogClient.fetchManifestLock', () => {
       http,
       networkInfo: makeNetworkInfo(true),
       storage: makeStorage(),
+      verifyEnvelope: async () => true,
     });
 
     await client.fetchManifestLock('bundle/with/slashes', '1.0.0+build');
@@ -401,6 +425,7 @@ describe('CatalogClient.fetchAsset', () => {
       http,
       networkInfo: makeNetworkInfo(true),
       storage: makeStorage(),
+      verifyEnvelope: async () => true,
     });
 
     await client.fetchAsset('bundle-1', '1.0.0', 'audio/test.m4a', {
@@ -439,6 +464,7 @@ describe('CatalogClient.fetchAsset', () => {
       http,
       networkInfo: makeNetworkInfo(true),
       storage: makeStorage(),
+      verifyEnvelope: async () => true,
     });
 
     await client.fetchAsset('bundle-1', '1.0.0', 'audio/test.m4a', {
@@ -455,9 +481,9 @@ describe('CatalogClient.fetchAsset', () => {
     });
 
     // Should throw MeteredConnectionBlockError from the HTTP wrapper.
-    await expect(
-      client.fetchAsset('bundle-1', '1.0.0', 'audio/test.m4a'),
-    ).rejects.toThrow(/metered/i);
+    await expect(client.fetchAsset('bundle-1', '1.0.0', 'audio/test.m4a')).rejects.toThrow(
+      /metered/i,
+    );
   });
 
   it('allows download on metered when allowMetered is true', async () => {
@@ -485,9 +511,9 @@ describe('CatalogClient.fetchAsset', () => {
       },
     });
 
-    await expect(
-      client.fetchAsset('bundle-1', '1.0.0', 'nonexistent.m4a'),
-    ).rejects.toThrow(CatalogHttpError);
+    await expect(client.fetchAsset('bundle-1', '1.0.0', 'nonexistent.m4a')).rejects.toThrow(
+      CatalogHttpError,
+    );
   });
 });
 
@@ -566,9 +592,7 @@ describe('CatalogClient.getCachedModeration', () => {
 describe('CatalogClient - metered connection behavior', () => {
   it('probe succeeds on metered (intent is probe, not download)', async () => {
     const catalogPayload: CatalogListPayload = {
-      bundles: [
-        { bundleId: 'b1', version: '1.0.0', sizeBytes: 1000, requiredAppVersion: '1.0.0' },
-      ],
+      bundles: [{ bundleId: 'b1', version: '1.0.0', sizeBytes: 1000, requiredAppVersion: '1.0.0' }],
       fetchedAt: '2025-01-15T10:00:00Z',
     };
 
@@ -627,5 +651,111 @@ describe('CatalogClient - metered connection behavior', () => {
 
     const result = await client.fetchManifestLock('b1', '1.0.0');
     expect(result.payload.bundleId).toBe('b1');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Envelope signature verification (Req 20.3)
+// ---------------------------------------------------------------------------
+
+describe('CatalogClient - envelope signature verification', () => {
+  const catalogPayload: CatalogListPayload = {
+    bundles: [{ bundleId: 'b1', version: '1.0.0', sizeBytes: 1000, requiredAppVersion: '1.0.0' }],
+    fetchedAt: '2025-01-15T10:00:00Z',
+  };
+
+  const moderationPayload: ModerationPayload = {
+    disabledSegmentIds: ['poi-evil'],
+    fetchedAt: '2025-01-15T12:00:00Z',
+  };
+
+  const lockPayload: ManifestLockPayload = {
+    bundleId: 'b1',
+    version: '1.0.0',
+    assets: [{ path: 'manifest.json', sizeBytes: 100, sha256: 'a'.repeat(64) }],
+    createdAt: '2025-01-15T10:00:00Z',
+  };
+
+  it('probe() throws EnvelopeVerificationError when signature is invalid', async () => {
+    const { client } = createTestClient({
+      fetchResponses: {
+        '/v1/catalog': {
+          status: 200,
+          body: jsonBytes(makeEnvelope(catalogPayload)),
+        },
+      },
+      verifyEnvelope: async () => false,
+    });
+
+    await expect(client.probe()).rejects.toThrow(EnvelopeVerificationError);
+  });
+
+  it('refreshModeration() throws and does NOT persist when signature fails', async () => {
+    const { client, storage } = createTestClient({
+      fetchResponses: {
+        '/v1/moderation': {
+          status: 200,
+          body: jsonBytes(makeEnvelope(moderationPayload)),
+        },
+      },
+      verifyEnvelope: async () => false,
+    });
+
+    await expect(client.refreshModeration()).rejects.toThrow(EnvelopeVerificationError);
+    // Moderation snapshot must NOT have been persisted.
+    expect(storage.savedModeration).toBeNull();
+  });
+
+  it('fetchManifestLock() throws when signature fails', async () => {
+    const { client } = createTestClient({
+      fetchResponses: {
+        'manifest.lock.json': {
+          status: 200,
+          body: jsonBytes(makeEnvelope(lockPayload)),
+        },
+      },
+      verifyEnvelope: async () => false,
+    });
+
+    await expect(client.fetchManifestLock('b1', '1.0.0')).rejects.toThrow(
+      EnvelopeVerificationError,
+    );
+  });
+
+  it('probe() succeeds when verifier confirms the signature', async () => {
+    const { client } = createTestClient({
+      fetchResponses: {
+        '/v1/catalog': {
+          status: 200,
+          body: jsonBytes(makeEnvelope(catalogPayload)),
+        },
+      },
+      verifyEnvelope: async () => true,
+    });
+
+    const result = await client.probe();
+    expect(result.catalog.bundles).toHaveLength(1);
+  });
+
+  it('EnvelopeVerificationError is distinguishable from CatalogHttpError', async () => {
+    const { client } = createTestClient({
+      fetchResponses: {
+        '/v1/catalog': {
+          status: 200,
+          body: jsonBytes(makeEnvelope(catalogPayload)),
+        },
+      },
+      verifyEnvelope: async () => false,
+    });
+
+    try {
+      await client.probe();
+      fail('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(EnvelopeVerificationError);
+      expect(err).not.toBeInstanceOf(CatalogHttpError);
+      expect((err as EnvelopeVerificationError).name).toBe('EnvelopeVerificationError');
+      expect((err as EnvelopeVerificationError).kid).toBe('test-kid');
+    }
   });
 });

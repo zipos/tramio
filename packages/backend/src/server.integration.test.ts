@@ -45,17 +45,36 @@ function buildHarness() {
     createdAt: '2024-06-15T12:00:00.000Z',
     assets: [
       { path: 'route.json', sizeBytes: 128, sha256: 'c'.repeat(64) },
-      { path: 'narratives/poi-rynek.en.md', sizeBytes: ASSET_CONTENT.length, sha256: 'd'.repeat(64) },
+      {
+        path: 'narratives/poi-rynek.en.md',
+        sizeBytes: ASSET_CONTENT.length,
+        sha256: 'd'.repeat(64),
+      },
     ],
   };
   const store = createBackendStore({
     bundles: [
-      { bundleId: 'wroclaw-tram-7', version: '2.1.0', sizeBytes: 2048, requiredAppVersion: '1.0.0' },
-      { bundleId: 'wroclaw-tram-7', version: '1.0.0', sizeBytes: 1024, requiredAppVersion: '0.9.0' },
+      {
+        bundleId: 'wroclaw-tram-7',
+        version: '2.1.0',
+        sizeBytes: 2048,
+        requiredAppVersion: '1.0.0',
+      },
+      {
+        bundleId: 'wroclaw-tram-7',
+        version: '1.0.0',
+        sizeBytes: 1024,
+        requiredAppVersion: '0.9.0',
+      },
     ],
     manifests: [manifest],
     assets: [
-      { bundleId: 'wroclaw-tram-7', version: '2.1.0', path: 'narratives/poi-rynek.en.md', bytes: ASSET_CONTENT },
+      {
+        bundleId: 'wroclaw-tram-7',
+        version: '2.1.0',
+        path: 'narratives/poi-rynek.en.md',
+        bytes: ASSET_CONTENT,
+      },
     ],
     gtfs: [
       {
@@ -69,13 +88,17 @@ function buildHarness() {
     entitlementsByDevice: {
       'device-001': [
         { tier: 'free', grantedAt: '2024-01-01T00:00:00.000Z' },
-        { tier: 'time_pass', grantedAt: '2024-06-01T00:00:00.000Z', expiresAt: '2099-12-31T23:59:59.000Z' },
+        {
+          tier: 'time_pass',
+          grantedAt: '2024-06-01T00:00:00.000Z',
+          expiresAt: '2099-12-31T23:59:59.000Z',
+        },
       ],
     },
     disabledSegmentIds: ['poi-b2b-cafe', 'poi-b2b-shop'],
     defaultEntitlementExpiry: '2099-01-01T00:00:00.000Z',
   });
-  const server = buildServer({ store, keys });
+  const server = buildServer({ store, keys, receiptMode: 'stub' });
   return { server, keys, store, manifest };
 }
 
@@ -625,6 +648,20 @@ describe('POST /v1/entitlements/restore', () => {
       payload: { deviceId: 'd', receipts: 'not-array' },
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  it('returns 400 when receipts array exceeds the 100-item cap', async () => {
+    const oversized = Array.from({ length: 101 }, (_, i) => ({
+      platformReceiptId: `rid-${i}`,
+      platformReceipt: 'opaque',
+    }));
+    const res = await server.inject({
+      method: 'POST',
+      url: '/v1/entitlements/restore',
+      payload: { deviceId: 'device-overflow', receipts: oversized },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'too_many_receipts' });
   });
 });
 

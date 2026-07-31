@@ -1,0 +1,319 @@
+{
+  "bundleId": "warsaw-bus-180-north",
+  "version": "1.0.0",
+  "assets": [
+    {
+      "path": "manifest.json",
+      "sizeBytes": 839,
+      "sha256": "a291c984765408a9a76586cce369efef5b50101b812cf1eaa6edffaf8185d495",
+      "protected": false
+    },
+    {
+      "path": "route.json",
+      "sizeBytes": 6179,
+      "sha256": "1b053b2fadc5366fc9ae1edcc3a2644a5b1b73f617dcb8477ef68f7e1b30dd5d",
+      "protected": false
+    },
+    {
+      "path": "pois.json",
+      "sizeBytes": 10639,
+      "sha256": "b11c64ad3bc98d1d44a1ddbb35cca22884fb1767fd4328ecb2ac603ae715462e",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-wilanow.pl.md",
+      "sizeBytes": 315,
+      "sha256": "4d5759a5adb9bf1be5afe0ddde5d9c4e950099805cbb039a771c908f646607d3",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-wilanow.en.md",
+      "sizeBytes": 342,
+      "sha256": "f70671861ef5f73d1dc03dff36811432497c93f81df3db480e49f5e7e7e6d905",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-sadyba.pl.md",
+      "sizeBytes": 240,
+      "sha256": "045aa93289ad4b597f81e8542de31474945d449160297e470d08be3408cff213",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-sadyba.en.md",
+      "sizeBytes": 216,
+      "sha256": "334880ac3b122e577d3bffd63fc069a79908a6f1c9985393096a250c7197d9a1",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-lazienki.pl.md",
+      "sizeBytes": 232,
+      "sha256": "569d0c038b975028994fbc270cee9f1e578f61d912aeb4ef8e78c8631c151893",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-lazienki.en.md",
+      "sizeBytes": 232,
+      "sha256": "0af35c18deefae061cc4f243f1f563264d8ca6e9e04aa646e7741fdfa618be20",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-plac-na-rozdrozu.pl.md",
+      "sizeBytes": 259,
+      "sha256": "fe167dd3081b2c687407561034d6eea9ddd865b37874592eba29145624a1a100",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-plac-na-rozdrozu.en.md",
+      "sizeBytes": 306,
+      "sha256": "85519e09fcccb7c375c3da6a1d0791598f4a06ac4894f3d1b5b404b86e908b75",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-piekna.pl.md",
+      "sizeBytes": 193,
+      "sha256": "923ae862f8eff9a47fa951dbc38b95b38cecece4a45d87390ecfcd65a06d93df",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-piekna.en.md",
+      "sizeBytes": 225,
+      "sha256": "e2f095518a6ed42e3402e53907e26e5924a134423e86eafe4f9c03e698cbbd45",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-trzech-krzyzy.pl.md",
+      "sizeBytes": 227,
+      "sha256": "7bf94918b8c70374b5351b19543dac9db6e51bf53c9fbda9b8f7ba9d2a63b505",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-trzech-krzyzy.en.md",
+      "sizeBytes": 271,
+      "sha256": "316cd2593f3b8d4ab92694b38764994fa88e002bd8d49fab700d897e482f6703",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-foksal.pl.md",
+      "sizeBytes": 465,
+      "sha256": "5f2b3a4c02cc849285dacc16508b8e0225e56e03f2375621558464d87eed3251",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-foksal.en.md",
+      "sizeBytes": 454,
+      "sha256": "9382d742de77e848fd77dcb50d0ec5deaad479d790bc2d60c7e976730d56e26c",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-ordynacka.pl.md",
+      "sizeBytes": 289,
+      "sha256": "5ef029be774e2e8dfd01767876eb2fa703ee29877a8b7c57695e822ffb8a0010",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-ordynacka.en.md",
+      "sizeBytes": 302,
+      "sha256": "9e035e4314ca0b2745c4d2210c797bf651a2ce7bb35f62aa3421e38166b12a7c",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-uniwersytet.pl.md",
+      "sizeBytes": 246,
+      "sha256": "4be723d01205025504e55249cf9c3c29b33dd8dcb3b0a0a27d9d274e9665473b",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-uniwersytet.en.md",
+      "sizeBytes": 270,
+      "sha256": "5b268ea51735c2e6bde5c384387b1387c9a2f8f898af6a662cc29a0419547f9d",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-bristol.pl.md",
+      "sizeBytes": 281,
+      "sha256": "0b17c03e3f8f84b0aee67160896232c889c603f41a3beb1d45aa3f578c1b44d8",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-bristol.en.md",
+      "sizeBytes": 311,
+      "sha256": "2ae318e0bd14e83a87ff9b30739fe917cf67ba706d06ab692cb04637db5c7a8b",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-plac-zamkowy.pl.md",
+      "sizeBytes": 306,
+      "sha256": "130f785fac3832b7623217ea9db30213bdf215dd0dcd6cba091c0ef2d299b069",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-plac-zamkowy.en.md",
+      "sizeBytes": 298,
+      "sha256": "9065e764d041409eaf51dc8ad27b163500daa091ec1578cfc502459196bfe8a9",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-kapitulna.pl.md",
+      "sizeBytes": 202,
+      "sha256": "91fa36144630e7c052d4947fb83abce6fa2ccfd2234b09effffd595d346cee62",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-kapitulna.en.md",
+      "sizeBytes": 220,
+      "sha256": "5b8f936e81d217b78c0f516b5e21a95e478c62f4b44b0c5d5da3a06c0ed5cdc5",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-krasinskich.pl.md",
+      "sizeBytes": 271,
+      "sha256": "8ef0f7f93b1084953f1e9f7e402125807d794d1844f91cbd83ba623a865d20f9",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-krasinskich.en.md",
+      "sizeBytes": 275,
+      "sha256": "aeccf434068d5180cf0047cb266d8e705670cb918615126347eb9950b114c5d8",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-swietojerska.pl.md",
+      "sizeBytes": 302,
+      "sha256": "b11bebbb97cd952e606ebf26c89aeb1cec0f321a19b219fc85f6311f569eb92d",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-swietojerska.en.md",
+      "sizeBytes": 286,
+      "sha256": "f59bab3be0be048e9a1b7de4bf4a4d5d11a5826b89c919a73de97a15e6b86d62",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-muranow.pl.md",
+      "sizeBytes": 538,
+      "sha256": "39fddbff03fd5c5e4d2de1f4f91decfca714543589538268752ee29c4c73b1bf",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-muranow.en.md",
+      "sizeBytes": 557,
+      "sha256": "1f2b6146afc38d105ea53298edc5575ee86f6d220137250485add852798e96ed",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-polin.pl.md",
+      "sizeBytes": 267,
+      "sha256": "0d0a7bda6a0a7d06d8003f5c6804a5a012c5cebbafdf96422390c138551a2696",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-polin.en.md",
+      "sizeBytes": 283,
+      "sha256": "c06d9b0a9f4a6f0c1480b856b1d134e52080ba36737416d6ca04c07e3fae76ee",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-anielewicza.pl.md",
+      "sizeBytes": 289,
+      "sha256": "6f1a922d9559e50bcdb4ebe422d6d2a42c5371a93753e1060c58b1096ccd6b3d",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-anielewicza.en.md",
+      "sizeBytes": 291,
+      "sha256": "66ce663bd0ca151a4c3cf25acd596e9887ffcb880eecbddd567cb8dcc3ad399a",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-smocza.pl.md",
+      "sizeBytes": 177,
+      "sha256": "6eebaeedabbcf826c430f375f0b2f7215e5339399ed52ac8c1ccb3aaa4a067f3",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-smocza.en.md",
+      "sizeBytes": 191,
+      "sha256": "d4867f3f5fd36498bc25cbe664d30dd89fa590811e6f634d1c85be3bd3cd67f2",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-esperanto.pl.md",
+      "sizeBytes": 250,
+      "sha256": "4e520add527c0ea1e81e862b7df592fc3ccf9f0cce63942c8acd05fa90324649",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-esperanto.en.md",
+      "sizeBytes": 242,
+      "sha256": "203c72f9815b79eb737540f737399ee231a00bff8e017e4264860cbd28ab7274",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-cmentarz-zydowski.pl.md",
+      "sizeBytes": 432,
+      "sha256": "032b18c32ea0790149a65866f0307f6b7d3258312d68bd1cd0bb2b24088c2496",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-cmentarz-zydowski.en.md",
+      "sizeBytes": 414,
+      "sha256": "d2c88b37b716f0e1f3dd0f58cffee01b515ee19ef9a3752ad94980d3d622dee3",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-niska.pl.md",
+      "sizeBytes": 238,
+      "sha256": "247d1a384127c6258212661c62470fb2570ba39300f945665955b377d0acfa6d",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-niska.en.md",
+      "sizeBytes": 272,
+      "sha256": "66a01043e842df4c662ad644bcaa38d0b67f66f804db353db9ea85256b773979",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-powazkowska.pl.md",
+      "sizeBytes": 193,
+      "sha256": "0c8e0f4d8cde24132432b66df18875b4e3a9df99805881170048efbe51f17c5b",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-powazkowska.en.md",
+      "sizeBytes": 211,
+      "sha256": "4182cd994d638ead1c5f77715b69c2c1cccef98b42f4def8d54860f52a16e145",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-powazki-iv-brama.pl.md",
+      "sizeBytes": 374,
+      "sha256": "64666844c5b90a83d3f2244c95b1cb368447bf08b6353c2158f18d155dc117ea",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-powazki-iv-brama.en.md",
+      "sizeBytes": 378,
+      "sha256": "7f460844a3c0900009efff231698e70390a8b5730d55fbc918592bdfdfb0f40c",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-pkp-powazki.pl.md",
+      "sizeBytes": 439,
+      "sha256": "0b00f609a310ddccc971cc2115f1f74a1e198ca303db5bc022092df24469a1ce",
+      "protected": false
+    },
+    {
+      "path": "narratives/poi-pkp-powazki.en.md",
+      "sizeBytes": 412,
+      "sha256": "72d4063eab492d2c41e31ad06af8028ec7db1842483331bd66dccdb932c11232",
+      "protected": false
+    },
+    {
+      "path": "tiles/14/9000/5000.pbf",
+      "sizeBytes": 12,
+      "sha256": "09f0cb2094a6d7feb42229a19c6341bb23bb2d0cdd7be3805d8203d1961df87e",
+      "protected": false
+    }
+  ],
+  "createdAt": "2026-07-31T23:37:27.306Z"
+}

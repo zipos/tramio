@@ -58,7 +58,11 @@ export interface LocationTranslatorActions {
 export interface GeofenceInput {
   readonly poiId: string;
   readonly geometry:
-    | { readonly kind: 'circle'; readonly center: readonly [number, number]; readonly radiusMeters: number }
+    | {
+        readonly kind: 'circle';
+        readonly center: readonly [number, number];
+        readonly radiusMeters: number;
+      }
     | { readonly kind: 'polygon'; readonly vertices: ReadonlyArray<readonly [number, number]> };
   readonly dwellSec: number;
 }

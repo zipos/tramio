@@ -129,6 +129,26 @@ export type UuidGenerator = () => string;
 export type NowUtcSeconds = () => number;
 
 // ---------------------------------------------------------------------------
+// Envelope verifier interface
+// ---------------------------------------------------------------------------
+
+/**
+ * Verifies that a signed envelope's payload has not been tampered with.
+ *
+ * Shape mirrors the `ManifestVerifier` pattern used by
+ * `OfflinePackDownloader` so the codebase stays consistent. The verifier
+ * MUST return `true` only when the signature over `payload` is valid for
+ * the given `kid`. Anything else is treated as a signature failure.
+ *
+ * @see packages/storage/src/downloader-types.ts — ManifestVerifier
+ */
+export type EnvelopeVerifier = (signed: {
+  payload: unknown;
+  signature: string;
+  kid: string;
+}) => Promise<boolean>;
+
+// ---------------------------------------------------------------------------
 // Entitlement_Client options
 // ---------------------------------------------------------------------------
 
@@ -143,6 +163,15 @@ export interface EntitlementClientOptions {
   readonly generateUuid?: UuidGenerator;
   /** Clock function. Defaults to `() => Math.floor(Date.now() / 1000)`. */
   readonly now?: NowUtcSeconds;
+  /**
+   * REQUIRED envelope verifier. Every signed response from the entitlement
+   * service is verified before its payload is read or cached. Fail closed:
+   * if verification returns false, the client throws
+   * `EntitlementVerificationError` and does NOT persist or use the payload.
+   *
+   * @see Requirement 20.3 — tamper-check signed payloads offline
+   */
+  readonly verifyEnvelope: EnvelopeVerifier;
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +187,27 @@ export class EntitlementHttpError extends Error {
     this.name = 'EntitlementHttpError';
     this.status = status;
     this.url = url;
+  }
+}
+
+/**
+ * Error thrown when an envelope's Ed25519 signature does not verify.
+ *
+ * Distinguishable from `EntitlementHttpError` (network/server issue) so
+ * callers can treat a signature failure as a trust problem — not an
+ * offline blip. A MITM on café Wi-Fi produces this error, not a
+ * retry-able network error.
+ *
+ * @see Requirement 20.3 — signed payload tamper detection
+ */
+export class EntitlementVerificationError extends Error {
+  public readonly url: string;
+  public readonly kid: string;
+  constructor(url: string, kid: string) {
+    super(`Entitlement envelope signature verification failed: ${url} (kid=${kid})`);
+    this.name = 'EntitlementVerificationError';
+    this.url = url;
+    this.kid = kid;
   }
 }
 
@@ -187,11 +237,9 @@ export interface ResolvedEntitlements {
  * an active tour, `resolveEntitlements()` reads from cache only.
  */
 export function createEntitlementClient(opts: EntitlementClientOptions) {
-  const { baseUrl, http, storage } = opts;
-  const generateUuid: UuidGenerator =
-    opts.generateUuid ?? (() => crypto.randomUUID());
-  const now: NowUtcSeconds =
-    opts.now ?? (() => Math.floor(Date.now() / 1000));
+  const { baseUrl, http, storage, verifyEnvelope } = opts;
+  const generateUuid: UuidGenerator = opts.generateUuid ?? (() => crypto.randomUUID());
+  const now: NowUtcSeconds = opts.now ?? (() => Math.floor(Date.now() / 1000));
 
   // Strip trailing slash from baseUrl for consistent URL construction.
   const base = baseUrl.replace(/\/+$/, '');
@@ -273,17 +321,17 @@ export function createEntitlementClient(opts: EntitlementClientOptions) {
         new TextDecoder().decode(response.body),
       ) as SignedEnvelope<EntitlementsPayload>;
 
+      // Verify envelope signature before trusting payload (Req 20.3).
+      const signatureOk = await verifyEnvelope(envelope);
+      if (!signatureOk) {
+        throw new EntitlementVerificationError(url, envelope.kid);
+      }
+
       const payload = envelope.payload;
-      const expiryUtcSeconds = Math.floor(
-        new Date(payload.expiryUtc).getTime() / 1000,
-      );
+      const expiryUtcSeconds = Math.floor(new Date(payload.expiryUtc).getTime() / 1000);
 
       // Persist to cache.
-      await storage.saveCachedEntitlements(
-        deviceId,
-        JSON.stringify(payload),
-        expiryUtcSeconds,
-      );
+      await storage.saveCachedEntitlements(deviceId, JSON.stringify(payload), expiryUtcSeconds);
 
       // Filter out expired time-pass entitlements (Req 14.3).
       const validEntitlements = filterExpiredEntitlements(payload.entitlements, currentTime);
@@ -295,6 +343,11 @@ export function createEntitlementClient(opts: EntitlementClientOptions) {
         fromCache: false,
       };
     } catch (err) {
+      // Signature verification failures are NOT retryable and must NOT
+      // fall through to stale cache — they indicate active tampering.
+      if (err instanceof EntitlementVerificationError) {
+        throw err;
+      }
       // If network fails but we have a stale cache, honor it until expiry (Req 13.3).
       if (cached !== null) {
         const parsed = JSON.parse(cached.payload) as EntitlementsPayload;
@@ -348,10 +401,14 @@ export function createEntitlementClient(opts: EntitlementClientOptions) {
       new TextDecoder().decode(response.body),
     ) as SignedEnvelope<ReceiptResponsePayload>;
 
+    // Verify envelope signature before trusting payload (Req 20.3).
+    const signatureOk = await verifyEnvelope(envelope);
+    if (!signatureOk) {
+      throw new EntitlementVerificationError(url, envelope.kid);
+    }
+
     const payload = envelope.payload;
-    const expiryUtcSeconds = Math.floor(
-      new Date(payload.expiryUtc).getTime() / 1000,
-    );
+    const expiryUtcSeconds = Math.floor(new Date(payload.expiryUtc).getTime() / 1000);
 
     // Build the entitlements payload for caching.
     const entitlementsPayload: EntitlementsPayload = {
@@ -410,10 +467,14 @@ export function createEntitlementClient(opts: EntitlementClientOptions) {
       new TextDecoder().decode(response.body),
     ) as SignedEnvelope<RestoreResponsePayload>;
 
+    // Verify envelope signature before trusting payload (Req 20.3).
+    const signatureOk = await verifyEnvelope(envelope);
+    if (!signatureOk) {
+      throw new EntitlementVerificationError(url, envelope.kid);
+    }
+
     const payload = envelope.payload;
-    const expiryUtcSeconds = Math.floor(
-      new Date(payload.expiryUtc).getTime() / 1000,
-    );
+    const expiryUtcSeconds = Math.floor(new Date(payload.expiryUtc).getTime() / 1000);
 
     // Build the entitlements payload for caching.
     const entitlementsPayload: EntitlementsPayload = {

@@ -27,20 +27,14 @@ describe('paths', () => {
     expect(() => packDir(layout, { bundleId: '../etc', version: '1' })).toThrow(
       InvalidPackRefError,
     );
-    expect(() => packDir(layout, { bundleId: 'a/b', version: '1' })).toThrow(
-      InvalidPackRefError,
-    );
-    expect(() => packDir(layout, { bundleId: '..', version: '1' })).toThrow(
-      InvalidPackRefError,
-    );
+    expect(() => packDir(layout, { bundleId: 'a/b', version: '1' })).toThrow(InvalidPackRefError);
+    expect(() => packDir(layout, { bundleId: '..', version: '1' })).toThrow(InvalidPackRefError);
   });
 
   it('rejects path-traversal attempts in version', () => {
     expect(() => stagingDir(layout, { bundleId: 'b', version: '../1' })).toThrow(
       InvalidPackRefError,
     );
-    expect(() => stagingDir(layout, { bundleId: 'b', version: '' })).toThrow(
-      InvalidPackRefError,
-    );
+    expect(() => stagingDir(layout, { bundleId: 'b', version: '' })).toThrow(InvalidPackRefError);
   });
 });

@@ -129,6 +129,26 @@ export interface CatalogStorageProvider {
 }
 
 // ---------------------------------------------------------------------------
+// Envelope verifier interface
+// ---------------------------------------------------------------------------
+
+/**
+ * Verifies that a signed envelope's payload has not been tampered with.
+ *
+ * Shape mirrors the `ManifestVerifier` pattern used by
+ * `OfflinePackDownloader` so the codebase stays consistent. The verifier
+ * MUST return `true` only when the signature over `payload` is valid for
+ * the given `kid`. Anything else is treated as a signature failure.
+ *
+ * @see packages/storage/src/downloader-types.ts — ManifestVerifier
+ */
+export type EnvelopeVerifier = (signed: {
+  payload: unknown;
+  signature: string;
+  kid: string;
+}) => Promise<boolean>;
+
+// ---------------------------------------------------------------------------
 // Catalog_Client options
 // ---------------------------------------------------------------------------
 
@@ -141,6 +161,15 @@ export interface CatalogClientOptions {
   readonly networkInfo: NetworkInfoProvider;
   /** Storage provider for reading installed packs and caching moderation state. */
   readonly storage: CatalogStorageProvider;
+  /**
+   * REQUIRED envelope verifier. Every signed response from the catalog is
+   * verified before its payload is read, cached, or persisted. Fail closed:
+   * if verification returns false, the client throws
+   * `EnvelopeVerificationError` and does NOT use the payload.
+   *
+   * @see Requirement 20.3 — tamper-check signed payloads offline
+   */
+  readonly verifyEnvelope: EnvelopeVerifier;
 }
 
 // ---------------------------------------------------------------------------
@@ -159,6 +188,26 @@ export class CatalogHttpError extends Error {
   }
 }
 
+/**
+ * Error thrown when an envelope's Ed25519 signature does not verify.
+ *
+ * Distinguishable from `CatalogHttpError` (network/server issue) so callers
+ * can treat a signature failure as a trust problem — not an offline blip.
+ * A MITM on café Wi-Fi produces this error, not a retry-able network error.
+ *
+ * @see Requirement 20.3 — signed payload tamper detection
+ */
+export class EnvelopeVerificationError extends Error {
+  public readonly url: string;
+  public readonly kid: string;
+  constructor(url: string, kid: string) {
+    super(`Envelope signature verification failed: ${url} (kid=${kid})`);
+    this.name = 'EnvelopeVerificationError';
+    this.url = url;
+    this.kid = kid;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Implementation
 // ---------------------------------------------------------------------------
@@ -172,7 +221,7 @@ export class CatalogHttpError extends Error {
  * surfacing logic on top.
  */
 export function createCatalogClient(opts: CatalogClientOptions) {
-  const { baseUrl, http, networkInfo, storage } = opts;
+  const { baseUrl, http, networkInfo, storage, verifyEnvelope } = opts;
 
   // Strip trailing slash from baseUrl for consistent URL construction.
   const base = baseUrl.replace(/\/+$/, '');
@@ -199,6 +248,12 @@ export function createCatalogClient(opts: CatalogClientOptions) {
     const envelope = JSON.parse(
       new TextDecoder().decode(response.body),
     ) as SignedEnvelope<CatalogListPayload>;
+
+    // Verify envelope signature before trusting payload (Req 20.3).
+    const signatureOk = await verifyEnvelope(envelope);
+    if (!signatureOk) {
+      throw new EnvelopeVerificationError(url, envelope.kid);
+    }
 
     const catalog = envelope.payload;
     const isMetered = !networkInfo.isUnmetered();
@@ -254,6 +309,12 @@ export function createCatalogClient(opts: CatalogClientOptions) {
       new TextDecoder().decode(response.body),
     ) as SignedEnvelope<ManifestLockPayload>;
 
+    // Verify envelope signature before trusting payload (Req 20.3).
+    const signatureOk = await verifyEnvelope(envelope);
+    if (!signatureOk) {
+      throw new EnvelopeVerificationError(url, envelope.kid);
+    }
+
     return envelope;
   }
 
@@ -289,9 +350,7 @@ export function createCatalogClient(opts: CatalogClientOptions) {
     const headers: Record<string, string> = {};
     if (rangeStart !== undefined) {
       const rangeValue =
-        rangeEnd !== undefined
-          ? `bytes=${rangeStart}-${rangeEnd}`
-          : `bytes=${rangeStart}-`;
+        rangeEnd !== undefined ? `bytes=${rangeStart}-${rangeEnd}` : `bytes=${rangeStart}-`;
       headers['Range'] = rangeValue;
     }
 
@@ -318,9 +377,7 @@ export function createCatalogClient(opts: CatalogClientOptions) {
 
     if (response.status === 206 && response.headers['content-range']) {
       // Format: "bytes start-end/total"
-      const match = response.headers['content-range'].match(
-        /^bytes\s+(\d+)-(\d+)\/(\d+)$/,
-      );
+      const match = response.headers['content-range'].match(/^bytes\s+(\d+)-(\d+)\/(\d+)$/);
       if (match && match[1] && match[2] && match[3]) {
         actualRangeStart = parseInt(match[1], 10);
         actualRangeEnd = parseInt(match[2], 10);
@@ -370,6 +427,15 @@ export function createCatalogClient(opts: CatalogClientOptions) {
     const envelope = JSON.parse(
       new TextDecoder().decode(response.body),
     ) as SignedEnvelope<ModerationPayload>;
+
+    // Verify envelope signature before trusting or persisting payload (Req 20.3).
+    // This is the WORST CASE path: moderation snapshots are persisted to SQLite
+    // and gate whether narrative segments play. An unverified MITM response on
+    // café Wi-Fi could silence all content or reverse an operator takedown.
+    const signatureOk = await verifyEnvelope(envelope);
+    if (!signatureOk) {
+      throw new EnvelopeVerificationError(url, envelope.kid);
+    }
 
     const payload = envelope.payload;
 

@@ -12,8 +12,4 @@
 
 export { OfflineMap } from './OfflineMap';
 export { resolveOfflineTileSource, buildOfflineStyle } from './tileSource';
-export type {
-  OfflineMapProps,
-  TilePackRef,
-  ResolvedTileSource,
-} from './types';
+export type { OfflineMapProps, TilePackRef, ResolvedTileSource } from './types';

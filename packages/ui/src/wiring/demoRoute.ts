@@ -1,9 +1,23 @@
 // demoRoute — embedded Warsaw demo content (fallback when catalog is unreachable).
 //
-// Geometry mirrors the summer-shortened line 22 pack (Praga → Plac Starynkiewicza).
-// Installed packs from Storage_Manager take precedence on the route selection screen.
+// The flagship route is bus 180 northbound, Wilanów → Żoliborz, defined in
+// `warsaw180.ts` with stop coordinates sourced from OpenStreetMap.
+//
+// The previous demo route (`warsaw-tram-22-east`) has been retired: it
+// described the summer-shortened tram 22, which reverted to its normal
+// alignment in early August 2026, so its narration and its terminus POI
+// were both about to become false. Bus 180 is a permanent, year-round
+// line, which makes it a safe subject for authored content.
+//
+// Installed packs from Storage_Manager take precedence on the route
+// selection screen; this embedded copy is the offline fallback.
 
 import type { StartTourConfig } from '../../../engine/src';
+import {
+  WARSAW_180_NORTH_BUNDLE_ID,
+  WARSAW_180_NORTH_POIS,
+  WARSAW_180_NORTH_TOUR_CONFIG,
+} from './warsaw180';
 
 export interface DemoPoi {
   poiId: string;
@@ -19,55 +33,18 @@ export interface DemoRoute {
   tourConfig: StartTourConfig;
 }
 
-export const WARSAW_TRAM_22_EAST: DemoRoute = {
-  routeId: 'warsaw-tram-22-east',
-  title: 'Warsaw Tram 22 — East (summer)',
+export const WARSAW_BUS_180_NORTH: DemoRoute = {
+  routeId: WARSAW_180_NORTH_BUNDLE_ID,
+  title: 'Warsaw Bus 180 — northbound',
   description:
-    'Praga → Plac Starynkiewicza. Shortened summer route until track works finish (~2 Aug).',
+    'Wilanów → Żoliborz along the Trakt Królewski. A scheduled city bus that happens to run the whole Royal Route, then continues through Muranów and Powązki.',
   language: 'pl',
-  pois: [
-    { poiId: 'poi-stadion-narodowy', label: 'PGE Narodowy' },
-    { poiId: 'poi-powisle', label: 'Powiśle / Wisła' },
-    { poiId: 'poi-starynkiewicza', label: 'Plac Starynkiewicza (terminus)' },
-  ],
-  tourConfig: {
-    bundle: { bundleId: 'warsaw-tram-22-east', bundleVersion: '1.0.0' },
-    geofences: [
-      {
-        poiId: 'poi-stadion-narodowy',
-        geometry: { kind: 'circle', center: [52.2394, 21.0455], radiusMeters: 150 },
-        dwellSec: 3,
-        priority: 80,
-        authorIndex: 0,
-      },
-      {
-        poiId: 'poi-powisle',
-        geometry: { kind: 'circle', center: [52.237, 21.026], radiusMeters: 100 },
-        dwellSec: 3,
-        priority: 70,
-        authorIndex: 1,
-      },
-      {
-        poiId: 'poi-starynkiewicza',
-        geometry: { kind: 'circle', center: [52.2292, 21.0125], radiusMeters: 80 },
-        dwellSec: 3,
-        priority: 90,
-        authorIndex: 2,
-      },
-    ],
-    route: [
-      [52.244, 21.038],
-      [52.241, 21.032],
-      [52.237, 21.026],
-      [52.233, 21.02],
-      [52.2292, 21.0125],
-    ],
-    language: 'pl',
-  },
+  pois: WARSAW_180_NORTH_POIS.map((poi) => ({ poiId: poi.poiId, label: poi.label })),
+  tourConfig: WARSAW_180_NORTH_TOUR_CONFIG,
 };
 
 /** Demo routes shown on the route selection screen. */
-export const DEMO_ROUTES: readonly DemoRoute[] = [WARSAW_TRAM_22_EAST];
+export const DEMO_ROUTES: readonly DemoRoute[] = [WARSAW_BUS_180_NORTH];
 
 export function findDemoRoute(bundleId: string): DemoRoute | undefined {
   return DEMO_ROUTES.find((r) => r.routeId === bundleId);

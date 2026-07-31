@@ -1,7 +1,7 @@
 // `bundle-validate` CLI for the authoring harness (task 2.3).
 //
 // Usage:
-//   bundle-validate [--json] [--strict] <bundle-dir>
+//   bundle-validate [--json] [--strict] [--release] <bundle-dir>
 //
 // Exits 0 when the bundle validates cleanly, 1 when one or more
 // `BundleValidationError`s are produced, and 2 when the arguments
@@ -17,10 +17,16 @@
 // (pretty-printed) on stdout, which lets editor harnesses and CI
 // pipelines parse the output without screen-scraping.
 //
-// `--strict` is reserved for a future "treat warnings as errors" mode;
-// validation today produces only errors, so the flag is accepted and
-// no-ops, with a note in `--help`. Wiring it up now keeps the surface
-// stable so callers do not have to relearn the CLI when warnings land.
+// `--strict` enables the review-gate validation mode: it requires an
+// approved review on every narrative segment, and rejects claims with
+// verdict 'unchecked' or 'unverifiable'. In non-strict (default) mode,
+// only hard errors are flagged (refuted claims, confirmed claims without
+// a sourceUrl, schema violations, cross-file invariants).
+//
+// `--release` implies `--strict` and additionally requires GTFS fields
+// (`gtfsStopId`, `scheduledOffsetSec`) on every stop in route.json.
+// The Warsaw 180 pack cannot pass this level until GTFS shapes.txt
+// ingest lands.
 //
 // The module is structured so the test harness (and any future host
 // process) can drive it without subprocesses: `runCli` accepts a
@@ -50,17 +56,24 @@ export interface CliIo {
 export interface CliOptions {
   readonly json: boolean;
   /**
-   * Reserved for "treat warnings as errors". The validator emits only
-   * errors today, so the flag is accepted and currently has no effect.
+   * Enable strict review-gate mode: requires approved review on every
+   * segment, rejects unchecked/unverifiable claims.
    */
   readonly strict: boolean;
+  /**
+   * Enable release mode (implies strict). Additionally requires GTFS
+   * fields (`gtfsStopId`, `scheduledOffsetSec`) on every stop in
+   * route.json. The Warsaw 180 pack cannot pass this level until GTFS
+   * shapes.txt ingest lands.
+   */
+  readonly release: boolean;
 }
 
 export type ParsedArgs =
   | { readonly ok: true; readonly directory: string; readonly options: CliOptions }
   | { readonly ok: false; readonly error: string };
 
-const USAGE = 'Usage: bundle-validate [--json] [--strict] <bundle-dir>';
+const USAGE = 'Usage: bundle-validate [--json] [--strict] [--release] <bundle-dir>';
 
 /**
  * Parse the argv slice that follows the executable + script (i.e. what
@@ -69,6 +82,7 @@ const USAGE = 'Usage: bundle-validate [--json] [--strict] <bundle-dir>';
 export function parseArgs(argv: readonly string[]): ParsedArgs {
   let json = false;
   let strict = false;
+  let release = false;
   let directory: string | undefined;
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -77,6 +91,8 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       json = true;
     } else if (arg === '--strict') {
       strict = true;
+    } else if (arg === '--release') {
+      release = true;
     } else if (arg === '--help' || arg === '-h') {
       return { ok: false, error: '__help__' };
     } else if (arg.startsWith('--')) {
@@ -95,7 +111,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     return { ok: false, error: 'missing required <bundle-dir> positional argument' };
   }
 
-  return { ok: true, directory, options: { json, strict } };
+  return { ok: true, directory, options: { json, strict, release } };
 }
 
 /**
@@ -104,7 +120,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
  * from `io.stdout` / `io.stderr` calls.
  */
 export function runCli(fsAdapter: BundleFileSystem, options: CliOptions, io: CliIo): number {
-  const result = validateBundle(fsAdapter);
+  const result = validateBundle(fsAdapter, { strict: options.strict, release: options.release });
 
   if (result.ok) {
     if (options.json) {
@@ -141,7 +157,13 @@ export function runCliFromArgv(argv: readonly string[], io: CliIo): number {
       io.stdout('');
       io.stdout('Flags:');
       io.stdout('  --json     Print BundleValidationError[] as JSON on stdout.');
-      io.stdout('  --strict   Treat warnings as errors (reserved; no-op today).');
+      io.stdout('  --strict   Enable strict review-gate mode: requires approved');
+      io.stdout('             review on every segment and rejects unchecked /');
+      io.stdout('             unverifiable claims.');
+      io.stdout('  --release  Enable release mode (implies --strict). Additionally');
+      io.stdout('             requires gtfsStopId and scheduledOffsetSec on every');
+      io.stdout('             stop in route.json. The Warsaw 180 pack cannot pass');
+      io.stdout('             this level until GTFS shapes.txt ingest lands.');
       io.stdout('  -h, --help Show this message.');
       return 0;
     }

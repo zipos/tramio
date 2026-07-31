@@ -32,11 +32,20 @@ export const routeSchema: JSONSchemaType = {
       minItems: 1,
       items: {
         type: 'object',
-        required: ['id', 'gtfsStopId', 'coord', 'scheduledOffsetSec'],
+        // `gtfsStopId` and `scheduledOffsetSec` are only required once a GTFS
+        // feed has been ingested. A route authored from OpenStreetMap stop
+        // platforms alone (no GTFS API key) has real coordinates but no feed
+        // ids and no timings, so those fields are omitted rather than filled
+        // with nulls or invented values. They are enforced at the `--release`
+        // validation level (not default, not --strict) so that a bundle cannot
+        // ship as a production release until GTFS ingest has populated them.
+        required: ['id', 'coord'],
         additionalProperties: false,
         properties: {
           id: { type: 'string', minLength: 1 },
           gtfsStopId: { type: 'string', minLength: 1 },
+          /** Human-readable stop name as published by the agency. */
+          name: { type: 'string', minLength: 1 },
           coord: latLngTuple(),
           scheduledOffsetSec: { type: 'integer', minimum: 0 },
         },

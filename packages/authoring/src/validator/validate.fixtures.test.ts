@@ -127,9 +127,7 @@ function buildValidBundle(): MutableBundle {
 // Assertion helpers
 // ---------------------------------------------------------------------------
 
-function expectRejected(
-  bundle: MutableBundle,
-): readonly BundleValidationError[] {
+function expectRejected(bundle: MutableBundle): readonly BundleValidationError[] {
   const result = validateBundle(virtualFileSystem(bundle));
   expect(result.ok).toBe(false);
   if (result.ok) throw new Error('Expected validation to fail');
@@ -232,9 +230,7 @@ Body without disclosure.
 
     const errors = expectRejected(bundle);
     const disclosureErr = errors.find(
-      (err) =>
-        err.hint.code === 'b2b-disclosure-missing' &&
-        err.jsonPointer === '/disclosure',
+      (err) => err.hint.code === 'b2b-disclosure-missing' && err.jsonPointer === '/disclosure',
     );
     expect(disclosureErr).toBeDefined();
     expect(disclosureErr!.message).toMatch(/disclosure/i);
@@ -292,9 +288,7 @@ Body without sponsor.
 
     const errors = expectRejected(bundle);
     const sponsorErr = errors.find(
-      (err) =>
-        err.hint.code === 'b2b-disclosure-missing' &&
-        err.jsonPointer === '/sponsor',
+      (err) => err.hint.code === 'b2b-disclosure-missing' && err.jsonPointer === '/sponsor',
     );
     expect(sponsorErr).toBeDefined();
     expect(sponsorErr!.message).toMatch(/sponsor/i);
@@ -320,8 +314,7 @@ Body with incomplete license.
     // Schema catches empty string via minLength:1 as a schema-violation
     const e = errors.find(
       (err) =>
-        err.filePath === 'narratives/poi-rynek.pl.md' &&
-        err.hint.code === 'schema-violation',
+        err.filePath === 'narratives/poi-rynek.pl.md' && err.hint.code === 'schema-violation',
     );
     expect(e).toBeDefined();
     expect(e!.filePath).toBe('narratives/poi-rynek.pl.md');
@@ -345,8 +338,7 @@ Body with incomplete license.
     const errors = expectRejected(bundle);
     const e = errors.find(
       (err) =>
-        err.filePath === 'narratives/poi-rynek.pl.md' &&
-        err.hint.code === 'schema-violation',
+        err.filePath === 'narratives/poi-rynek.pl.md' && err.hint.code === 'schema-violation',
     );
     expect(e).toBeDefined();
     expect(e!.filePath).toBe('narratives/poi-rynek.pl.md');
@@ -375,8 +367,7 @@ Body.
     const errors = expectRejected(bundle);
     const e = errors.find(
       (err) =>
-        err.filePath === 'narratives/poi-rynek.pl.md' &&
-        err.hint.code === 'schema-violation',
+        err.filePath === 'narratives/poi-rynek.pl.md' && err.hint.code === 'schema-violation',
     );
     expect(e).toBeDefined();
     expect(e!.message).toMatch(/attribution|required/i);
@@ -391,9 +382,7 @@ describe('validateBundle — missing narrative file reference (Req 2.4)', () => 
 
     const errors = expectRejected(bundle);
     const e = errors.find(
-      (err) =>
-        err.hint.code === 'missing-file' &&
-        err.jsonPointer === '/pois/0/narratives/en',
+      (err) => err.hint.code === 'missing-file' && err.jsonPointer === '/pois/0/narratives/en',
     );
     expect(e).toBeDefined();
     expect(e!.filePath).toBe('pois.json');

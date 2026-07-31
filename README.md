@@ -22,7 +22,18 @@ The repository root is the Expo bare React Native app. Native projects (`ios/`,
 ├── eas.json                      EAS Build profiles (development / preview / production)
 ├── plugins/                      Local Expo config plugins
 │   └── withTramioForegroundService.ts
-├── packages/                     (Future) module boundaries — see task 1.3
+├── packages/
+│   ├── authoring/       Content_Bundle JSON Schema validator + CLI (bundle-validate)
+│   ├── backend/         Self-hosted Fastify catalog/entitlement/moderation API
+│   ├── branding/        Brand config (display name, domains, bundle IDs)
+│   ├── capability/      OS_MATRIX, runtime probes, useCapabilities hook, translators
+│   ├── clients/         HTTP chokepoint, Catalog_Client, Entitlement_Client
+│   ├── crypto-service/  Ed25519 signature utilities for catalog verification
+│   ├── engine/          Pure Tour_Engine reducer (state machine, geofence pipeline, priority, audio source)
+│   ├── map/             MapLibre GL Native offline-tile map component (OfflineMap)
+│   ├── native/          Custom turbo modules: Location, Audio, TTS (iOS + Android, NOT autolinked)
+│   ├── storage/         StorageManager, Offline_Pack downloader, LRU budget, GTFS parser
+│   └── ui/              Screens (route selection, tour playback) + wiring (TourRuntime, locationAdapter)
 └── .kiro/specs/urban-narrative-mvp/   Spec, design, tasks, requirements
 ```
 
@@ -53,6 +64,45 @@ Profiles are configured in `eas.json`:
 npx eas-cli build --profile development --platform ios
 npx eas-cli build --profile development --platform android
 ```
+
+## Content authoring
+
+A **route bundle** is a directory containing `manifest.json`, `route.json`,
+`pois.json`, narrative Markdown files (one per POI per language), and
+optionally pre-rendered audio and offline vector tiles. It is the unit of
+content that gets signed, distributed via the catalog API, and installed as
+an Offline_Pack on the user's device.
+
+**Coordinate provenance.** Stop positions and route polylines come from GTFS
+feeds or the public OpenStreetMap Overpass API. They are never hand-written
+and never AI-generated. The bus 180 route uses OSM relation 15885943 queried
+via the keyless Overpass endpoint.
+
+**Six-stage authoring pipeline:**
+
+1. **Machine skeleton** — extract stops/geometry from GTFS or Overpass.
+2. **AI draft** — generate narrative text from stop context + POI references.
+3. **Independent fact-check** — each factual claim is verified against a
+   primary source and recorded in `claims[]` with a verdict and source URL.
+4. **Human review** — a reviewer approves or rejects the segment (recorded
+   in the `review` block of narrative frontmatter).
+5. **Budget / tone check** — verify spoken duration fits the inter-stop
+   window; confirm `tone: 'memorial'` on all sensitive material.
+6. **Sign** — the catalog signs the bundle with an Ed25519 key; the app
+   verifies the signature before loading.
+
+**Validation.** Run:
+
+```sh
+npx bundle-validate --strict <bundle-dir>
+```
+
+`--strict` refuses any narrative without an approved review, rejects
+`unchecked` or `unverifiable` claims, and hard-blocks any bundle containing
+a `refuted` claim (in all modes, not just strict).
+
+See [`packages/authoring/AUTHORING.md`](packages/authoring/AUTHORING.md) for
+the full authoring guide.
 
 ## Background execution & permissions
 

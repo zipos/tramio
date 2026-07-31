@@ -22,7 +22,6 @@ import { createNativeTtsEngine } from '../tts/NativeTtsEngine';
 import type {
   NativeTtsEngineBinding,
   SpeakOptions,
-  TtsPlaybackEvent,
   TtsPlaybackListener,
   Unsubscribe,
 } from '../tts/types';
@@ -148,10 +147,7 @@ describe('TTS_Engine — iOS device smoke tests', () => {
     engine.onPlaybackFinished((ev) => finished.push(ev));
 
     // This should NOT throw — the native side handles the fallback.
-    await engine.speak(
-      'This text uses a non-existent language code.',
-      SPEAK_OPTS_MISSING_VOICE,
-    );
+    await engine.speak('This text uses a non-existent language code.', SPEAK_OPTS_MISSING_VOICE);
 
     await delay(5_000);
 
@@ -237,10 +233,7 @@ describe('TTS_Engine — Android device smoke tests', () => {
     const finished: Array<{ segmentId: string }> = [];
     engine.onPlaybackFinished((ev) => finished.push(ev));
 
-    await engine.speak(
-      'Fallback test with non-existent language.',
-      SPEAK_OPTS_MISSING_VOICE,
-    );
+    await engine.speak('Fallback test with non-existent language.', SPEAK_OPTS_MISSING_VOICE);
 
     await delay(5_000);
 

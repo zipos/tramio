@@ -66,9 +66,7 @@ export function useLocationTranslator(
  * The hook NEVER reads `Platform.OS` or `Platform.Version` — only
  * `caps.isolatedAudioFocus` via `dispatchByCapability`.
  */
-export function useAudioTranslator(
-  variants: AudioTranslatorVariants,
-): AudioTranslatorActions {
+export function useAudioTranslator(variants: AudioTranslatorVariants): AudioTranslatorActions {
   const caps = useCapabilities();
   return useMemo(() => audioTranslator(caps, variants), [caps, variants]);
 }
@@ -97,9 +95,7 @@ export function useForegroundServiceTranslator(
  * `caps.secureEnclaveAvailable` and `caps.strongBoxAvailable` via
  * `dispatchByCapability`.
  */
-export function useCryptoTranslator(
-  variants: CryptoTranslatorVariants,
-): CryptoTranslatorActions {
+export function useCryptoTranslator(variants: CryptoTranslatorVariants): CryptoTranslatorActions {
   const caps = useCapabilities();
   return useMemo(() => cryptoTranslator(caps, variants), [caps, variants]);
 }

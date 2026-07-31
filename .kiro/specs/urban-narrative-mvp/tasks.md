@@ -1,5 +1,18 @@
 # Implementation Plan: Urban Narrative MVP
 
+> **Audit 2026-07-31.** Code-verified task count: **45 of 87 checked** (was 41
+> before this audit). Every newly ticked item has been verified by reading
+> the implementing source file; justifications listed below.
+>
+> Newly ticked (4 items):
+>
+> | Task | Justification                                                                                               |
+> | ---- | ----------------------------------------------------------------------------------------------------------- |
+> | 3.16 | `packages/engine/src/audioSource.ts` — `selectAudioSource()` implements the 4-step fallback chain           |
+> | 3.18 | `packages/engine/src/reducer.ts` — `handleFocusLoss` / `handleFocusRegain` with 10-min discard              |
+> | 11.1 | `packages/ui/src/screens/RouteSelectionScreen.tsx` — lists routes, download/start, accessibility labels     |
+> | 13.1 | `packages/ui/src/wiring/TourRuntime.ts` — translates all EngineCommands to expo-location/expo-speech/timers |
+
 ## Overview
 
 Implementation proceeds bottom-up. The Authoring_Schema validator and the pure Tour_Engine reducer are stood up first so most universal properties (P1–P12) become testable before any native code or UI is written. Native turbo modules (Location_Service, Audio_Service, TTS_Engine) and Storage_Manager are built behind the same TypeScript interfaces the engine already targets. Catalog_Client, Entitlement_Client, and a minimal self-hosted backend follow, then MapLibre with offline tiles, then UI flows. The Capability_Layer is wired late so its fallback paths are validated against the existing engine property suite (P18). A single sample Content_Bundle is authored as the integration fixture.
@@ -136,7 +149,7 @@ The application code is TypeScript on Expo bare React Native. The validator is a
     - **Property 8: Route deviation classification and resume corridor**
     - **Validates: Requirements 8.1, 8.4**
 
-  - [ ] 3.16 Implement audio source selection with language fallback
+  - [x] 3.16 Implement audio source selection with language fallback
 
     - Pre-rendered audio if exists in selected language; otherwise TTS on the narrative Markdown in that language; otherwise fall back to bundle's `defaultLanguage`
     - _Requirements: 9.1, 9.2, 9.5_
@@ -146,7 +159,7 @@ The application code is TypeScript on Expo bare React Native. The validator is a
     - **Property 9: Audio source selection follows pre-rendered availability and language fallback**
     - **Validates: Requirements 9.1, 9.2, 9.5**
 
-  - [ ] 3.18 Implement audio focus loss/regain handling in the engine
+  - [x] 3.18 Implement audio focus loss/regain handling in the engine
 
     - Pause + record offset on focus loss; resume from offset on regain; discard offset and skip auto-resume if gap exceeds 10 minutes
     - _Requirements: 10.1, 10.2, 10.3, 10.4_
@@ -335,7 +348,7 @@ The application code is TypeScript on Expo bare React Native. The validator is a
 
 - [ ] 11. UI flows
 
-  - [ ] 11.1 Implement route selection screen
+  - [x] 11.1 Implement route selection screen
 
     - Lists installed Content_Bundles; disables "Start" for partial packs and shows missing-asset count
     - All interactive elements expose VoiceOver/TalkBack labels and respect dynamic type
@@ -376,7 +389,7 @@ The application code is TypeScript on Expo bare React Native. The validator is a
 
 - [ ] 13. Wiring and integration
 
-  - [ ] 13.1 Wire Tour_Engine to Location_Service, Audio_Service, TTS_Engine via command translators
+  - [x] 13.1 Wire Tour_Engine to Location_Service, Audio_Service, TTS_Engine via command translators
 
     - Translators consume `RequestLocationMode`, `PlaySegment`, `PauseAudio`, `ResumeAudio`, `StopAudio`, `ScheduleTimer`, `CancelTimer`, `ReleaseAll`; forward native events back as `EngineEvent`s
     - _Requirements: 1.7, 5.1, 9.1, 9.2, 11.2, 11.3, 12.1, 12.2, 15.1_

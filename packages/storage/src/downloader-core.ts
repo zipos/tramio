@@ -295,6 +295,17 @@ function dependencyRank(assetPath: string): number {
   return 6;
 }
 
+/**
+ * Deterministic JSON serialization with sorted object keys. Strings are
+ * encoded by `JSON.stringify` so escaping rules match the standard parser.
+ *
+ * Keys whose value is `undefined` are skipped, matching `JSON.stringify`
+ * semantics. This is critical because the server-side `canonicalJsonStringify`
+ * in packages/backend/src/signing.ts MUST produce identical output — the two
+ * implementations are kept in sync manually.
+ *
+ * @see packages/backend/src/signing.ts — server-side counterpart (keep in sync)
+ */
 export function canonicalJsonStringify(value: unknown): string {
   if (value === null || typeof value !== 'object') {
     return JSON.stringify(value);
@@ -304,7 +315,13 @@ export function canonicalJsonStringify(value: unknown): string {
   }
   const obj = value as Record<string, unknown>;
   const keys = Object.keys(obj).sort();
-  const parts = keys.map((k) => JSON.stringify(k) + ':' + canonicalJsonStringify(obj[k]));
+  const parts: string[] = [];
+  for (const k of keys) {
+    const v = obj[k];
+    // Skip undefined-valued keys to match JSON.stringify semantics.
+    if (v === undefined) continue;
+    parts.push(JSON.stringify(k) + ':' + canonicalJsonStringify(v));
+  }
   return '{' + parts.join(',') + '}';
 }
 

@@ -79,17 +79,7 @@ const deeperLayerSchema: JSONSchemaType = {
 // statically without reading the runtime sibling property.
 const poiSchema: JSONSchemaType = {
   type: 'object',
-  required: [
-    'id',
-    'category',
-    'priority',
-    'geometry',
-    'dwellSec',
-    'deferrable',
-    'drPermitted',
-    'tier',
-    'narratives',
-  ],
+  required: ['id', 'category', 'priority', 'geometry', 'dwellSec', 'tier', 'narratives'],
   additionalProperties: false,
   properties: {
     id: { type: 'string', minLength: 1 },
@@ -102,6 +92,7 @@ const poiSchema: JSONSchemaType = {
     deferrable: { type: 'boolean' },
     drPermitted: { type: 'boolean' },
     tier: ENTITLEMENT_TIER_SCHEMA,
+    tone: { type: 'string', enum: ['standard', 'memorial'] },
     narratives: languageKeyedStringMap(),
     audio: languageKeyedStringMap(),
     deeperLayers: {

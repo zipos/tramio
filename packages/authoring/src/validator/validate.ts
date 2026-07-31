@@ -33,10 +33,7 @@
 import Ajv2020 from 'ajv/dist/2020';
 import type { ErrorObject, ValidateFunction } from 'ajv';
 
-import {
-  AUTHORING_SCHEMAS,
-  type AuthoringSchemaEntry,
-} from '../schemas/authoring';
+import { AUTHORING_SCHEMAS, type AuthoringSchemaEntry } from '../schemas/authoring';
 import type {
   EntitlementTier,
   Manifest,
@@ -56,6 +53,7 @@ import type {
   HintCode,
   LoadedBundle,
   LoadedNarrative,
+  ValidateOptions,
   ValidationResult,
 } from './types';
 
@@ -142,19 +140,19 @@ function ajvErrorsToValidation(
  * discriminated `ValidationResult`. Pure, synchronous, no I/O outside
  * the abstraction.
  */
-export function validateBundle(fsAdapter: BundleFileSystem): ValidationResult {
+export function validateBundle(
+  fsAdapter: BundleFileSystem,
+  options?: ValidateOptions,
+): ValidationResult {
+  const release = options?.release === true;
+  const strict = release || options?.strict === true;
   const errors: BundleValidationError[] = [];
 
   // ---------------------------------------------------------------------
   // 1. Parse + schema-validate the four authored entry-point files.
   // ---------------------------------------------------------------------
 
-  const manifest = readAndValidateJson<Manifest>(
-    fsAdapter,
-    'manifest.json',
-    'manifest',
-    errors,
-  );
+  const manifest = readAndValidateJson<Manifest>(fsAdapter, 'manifest.json', 'manifest', errors);
   const route = readAndValidateJson<Route>(fsAdapter, 'route.json', 'route', errors);
   const pois = readAndValidateJson<Pois>(fsAdapter, 'pois.json', 'pois', errors);
 
@@ -164,6 +162,67 @@ export function validateBundle(fsAdapter: BundleFileSystem): ValidationResult {
   // recorded.
   if (manifest === undefined || route === undefined || pois === undefined) {
     return { ok: false, errors };
+  }
+
+  // ---------------------------------------------------------------------
+  // 1b. Cross-file bundle identity agreement.
+  //
+  // The canonical bundle identity is declared in manifest.json. Every
+  // file that carries `bundleId` must agree. Currently that is:
+  //   - route.json → bundleId
+  //
+  // (pois.json and narrative frontmatter do not carry bundleId.)
+  // ---------------------------------------------------------------------
+
+  if (route.bundleId !== manifest.bundleId) {
+    errors.push(
+      err(
+        'route.json',
+        '/bundleId',
+        `route.json declares bundleId "${route.bundleId}" but manifest.json declares "${manifest.bundleId}". Bundle identity must agree across all files.`,
+        hint('bundle-id-mismatch', 'Set route.json bundleId to match the value in manifest.json.'),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // 1c. Release-level GTFS field enforcement.
+  //
+  // In release mode, every stop must have `gtfsStopId` and
+  // `scheduledOffsetSec`. These fields are optional in default/strict
+  // because a route authored from OSM alone lacks GTFS feed data.
+  // ---------------------------------------------------------------------
+
+  if (release) {
+    for (let si = 0; si < route.stops.length; si += 1) {
+      const stop = route.stops[si]!;
+      if (stop.gtfsStopId === undefined) {
+        errors.push(
+          err(
+            'route.json',
+            pointerFromSegments(['stops', si, 'gtfsStopId']),
+            `Stop "${stop.id}" is missing gtfsStopId. Release mode requires GTFS fields on every stop.`,
+            hint(
+              'release-gtfs-field-missing',
+              'Ingest the GTFS feed and populate gtfsStopId before building a release bundle.',
+            ),
+          ),
+        );
+      }
+      if (stop.scheduledOffsetSec === undefined) {
+        errors.push(
+          err(
+            'route.json',
+            pointerFromSegments(['stops', si, 'scheduledOffsetSec']),
+            `Stop "${stop.id}" is missing scheduledOffsetSec. Release mode requires GTFS fields on every stop.`,
+            hint(
+              'release-gtfs-field-missing',
+              'Ingest the GTFS feed and populate scheduledOffsetSec before building a release bundle.',
+            ),
+          ),
+        );
+      }
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -203,7 +262,15 @@ export function validateBundle(fsAdapter: BundleFileSystem): ValidationResult {
   // ---------------------------------------------------------------------
 
   // (7a-route) Stop GTFS ids must be unique within the route.
-  const stopGtfsIds = route.stops.map((s) => s.gtfsStopId);
+  //
+  // Stops with no `gtfsStopId` are substituted with a per-index sentinel so
+  // they can never collide with each other or with a real id. A route
+  // authored from OpenStreetMap platforms alone has no GTFS feed ids yet, and
+  // comparing every absent id as an equal value would report all 36 stops as
+  // duplicates of one another. Uniqueness only constrains ids that exist.
+  // The sentinel is index-derived and NUL-prefixed, so it preserves the
+  // original array indices and cannot be produced by a schema-valid id.
+  const stopGtfsIds = route.stops.map((s, index) => s.gtfsStopId ?? `\u0000absent-${index}`);
   reportDuplicates(
     stopGtfsIds,
     (id, index) =>
@@ -249,6 +316,7 @@ export function validateBundle(fsAdapter: BundleFileSystem): ValidationResult {
       narratives,
       confirmedAudioFiles,
       errors,
+      strict,
     );
   }
 
@@ -267,6 +335,7 @@ export function validateBundle(fsAdapter: BundleFileSystem): ValidationResult {
       confirmedAudioFiles,
       standbyTracks,
       errors,
+      strict,
     );
   }
 
@@ -324,13 +393,14 @@ function readAndValidateJson<T>(
     return undefined;
   }
 
-  const validator = getValidators()[
-    kind === 'narrative-frontmatter'
-      ? 'narrativeFrontmatter'
-      : kind === 'standby-track'
-        ? 'standbyTrack'
-        : kind
-  ];
+  const validator =
+    getValidators()[
+      kind === 'narrative-frontmatter'
+        ? 'narrativeFrontmatter'
+        : kind === 'standby-track'
+          ? 'standbyTrack'
+          : kind
+    ];
 
   const isValid = validator(parsed);
   if (!isValid) {
@@ -352,6 +422,7 @@ function validatePoiCrossFile(
   narratives: Map<string, LoadedNarrative>,
   confirmedAudioFiles: Set<string>,
   errors: BundleValidationError[],
+  strict: boolean,
 ): void {
   // (6b) Every POI must have a narrative entry for the manifest's
   // defaultLanguage.
@@ -401,6 +472,7 @@ function validatePoiCrossFile(
       fsAdapter,
       narratives,
       errors,
+      strict,
     });
   }
 
@@ -411,13 +483,7 @@ function validatePoiCrossFile(
       loadAndValidateNarrative({
         narrativePath: layer.narrative,
         ownerFilePath: 'pois.json',
-        ownerJsonPointer: pointerFromSegments([
-          'pois',
-          poiIndex,
-          'deeperLayers',
-          li,
-          'narrative',
-        ]),
+        ownerJsonPointer: pointerFromSegments(['pois', poiIndex, 'deeperLayers', li, 'narrative']),
         poiId: poi.id,
         // Deeper-layer narratives may not declare their own `language`
         // field that matches a particular code; we skip the language
@@ -427,6 +493,7 @@ function validatePoiCrossFile(
         fsAdapter,
         narratives,
         errors,
+        strict,
       });
     }
   }
@@ -444,10 +511,7 @@ function validatePoiCrossFile(
             'pois.json',
             pointerFromSegments(['pois', poiIndex, 'audio', lang]),
             `POI "${poi.id}" references audio asset "${audioPath}" for language "${lang}" but the file is missing from the bundle.`,
-            hint(
-              'missing-file',
-              `Add the audio file at "${audioPath}" or remove the reference.`,
-            ),
+            hint('missing-file', `Add the audio file at "${audioPath}" or remove the reference.`),
           ),
         );
       } else {
@@ -469,6 +533,7 @@ function validateStandbyTrack(
   confirmedAudioFiles: Set<string>,
   standbyTracks: Map<string, StandbyTrack>,
   errors: BundleValidationError[],
+  strict: boolean,
 ): void {
   const trackPath = `standby/${trackId}.json`;
 
@@ -559,6 +624,7 @@ function validateStandbyTrack(
       fsAdapter,
       narratives,
       errors,
+      strict,
     });
   }
 
@@ -572,10 +638,7 @@ function validateStandbyTrack(
             trackPath,
             pointerFromSegments(['audio', lang]),
             `Standby track "${trackId}" references audio asset "${audioPath}" for language "${lang}" but the file is missing from the bundle.`,
-            hint(
-              'missing-file',
-              `Add the audio file at "${audioPath}" or remove the reference.`,
-            ),
+            hint('missing-file', `Add the audio file at "${audioPath}" or remove the reference.`),
           ),
         );
       } else {
@@ -607,6 +670,8 @@ interface NarrativeLoadArgs {
   readonly fsAdapter: BundleFileSystem;
   readonly narratives: Map<string, LoadedNarrative>;
   readonly errors: BundleValidationError[];
+  /** Whether strict validation mode is enabled. */
+  readonly strict: boolean;
 }
 
 function loadAndValidateNarrative(args: NarrativeLoadArgs): void {
@@ -620,6 +685,7 @@ function loadAndValidateNarrative(args: NarrativeLoadArgs): void {
     fsAdapter,
     narratives,
     errors,
+    strict,
   } = args;
 
   // Memoise: the same narrative file may be referenced from multiple
@@ -633,10 +699,7 @@ function loadAndValidateNarrative(args: NarrativeLoadArgs): void {
         ownerFilePath,
         ownerJsonPointer,
         `Narrative file "${narrativePath}" referenced by POI/track "${poiId}" is missing from the bundle.`,
-        hint(
-          'missing-file',
-          `Author the narrative at "${narrativePath}" or update the reference.`,
-        ),
+        hint('missing-file', `Author the narrative at "${narrativePath}" or update the reference.`),
       ),
     );
     return;
@@ -656,6 +719,21 @@ function loadAndValidateNarrative(args: NarrativeLoadArgs): void {
         ),
       ),
     );
+    return;
+  }
+
+  // When there is no frontmatter (empty object from the parser) and we are
+  // NOT in strict mode, accept the narrative as-is. This supports the early
+  // pipeline stages (machine skeleton, AI draft) where frontmatter has not
+  // yet been added. In strict mode, the schema check below will correctly
+  // reject the missing required fields.
+  const hasFrontmatter = Object.keys(parsed.frontmatter).length > 0;
+  if (!hasFrontmatter && !strict) {
+    narratives.set(narrativePath, {
+      filePath: narrativePath,
+      frontmatter: { poiId: poiId, language: language ?? '' } as unknown as NarrativeFrontmatter,
+      body: parsed.body,
+    });
     return;
   }
 
@@ -688,8 +766,7 @@ function loadAndValidateNarrative(args: NarrativeLoadArgs): void {
   // sponsor + disclosure (Req 14.5, 20.4).
   const effectiveTier = frontmatter.tier ?? parentTier;
   if (effectiveTier === 'b2b') {
-    const sponsorOk =
-      typeof frontmatter.sponsor === 'string' && frontmatter.sponsor.length > 0;
+    const sponsorOk = typeof frontmatter.sponsor === 'string' && frontmatter.sponsor.length > 0;
     const disclosureOk =
       typeof frontmatter.disclosure === 'string' && frontmatter.disclosure.length > 0;
     if (!sponsorOk) {
@@ -753,6 +830,109 @@ function loadAndValidateNarrative(args: NarrativeLoadArgs): void {
           ),
         );
       }
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // (6) Review gate: claims, review decision, and tone enforcement.
+  // -----------------------------------------------------------------------
+
+  // (6a) A claim with verdict 'refuted' MUST fail in ALL modes.
+  // (6b) A claim with verdict 'confirmed' MUST have a sourceUrl.
+  // (6c) A claim with verdict 'unchecked' or 'unverifiable' MUST fail strict mode.
+  if (Array.isArray(frontmatter.claims)) {
+    for (let ci = 0; ci < frontmatter.claims.length; ci += 1) {
+      const claim = frontmatter.claims[ci]!;
+      if (claim.verdict === 'refuted') {
+        errors.push(
+          err(
+            narrativePath,
+            pointerFromSegments(['claims', ci, 'verdict']),
+            `Narrative "${narrativePath}" contains a refuted claim "${claim.id}": "${claim.text}". Refuted claims are never shippable.`,
+            hint(
+              'refuted-claim',
+              'Remove the refuted claim or rewrite the narrative to correct the factual error.',
+            ),
+          ),
+        );
+      }
+      if (claim.verdict === 'confirmed' && !claim.sourceUrl) {
+        errors.push(
+          err(
+            narrativePath,
+            pointerFromSegments(['claims', ci, 'sourceUrl']),
+            `Narrative "${narrativePath}" claim "${claim.id}" is marked confirmed but has no sourceUrl.`,
+            hint(
+              'confirmed-claim-missing-source',
+              'A confirmed claim must cite a source URL for traceability.',
+            ),
+          ),
+        );
+      }
+      if (strict && claim.verdict === 'unchecked') {
+        errors.push(
+          err(
+            narrativePath,
+            pointerFromSegments(['claims', ci, 'verdict']),
+            `Narrative "${narrativePath}" claim "${claim.id}" has verdict "unchecked". Strict mode requires all claims to be resolved.`,
+            hint(
+              'unchecked-claim',
+              'Review the claim and set its verdict to confirmed, refuted, or unverifiable before shipping.',
+            ),
+          ),
+        );
+      }
+      if (strict && claim.verdict === 'unverifiable') {
+        errors.push(
+          err(
+            narrativePath,
+            pointerFromSegments(['claims', ci, 'verdict']),
+            `Narrative "${narrativePath}" claim "${claim.id}" has verdict "unverifiable". Strict mode requires all claims to be confirmed or removed.`,
+            hint(
+              'unverifiable-claim',
+              'Rewrite the narrative to remove unverifiable claims, or confirm them with a source.',
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  // (6d) In strict mode, a segment whose review.decision is not 'approved'
+  // MUST fail.
+  if (strict) {
+    if (
+      frontmatter.review === undefined ||
+      frontmatter.review === null ||
+      frontmatter.review.decision !== 'approved'
+    ) {
+      const decision = frontmatter.review?.decision ?? 'missing';
+      errors.push(
+        err(
+          narrativePath,
+          '/review/decision',
+          `Narrative "${narrativePath}" has review decision "${decision}". Strict mode requires an approved review.`,
+          hint(
+            'review-not-approved',
+            'Have a human reviewer approve this segment before shipping.',
+          ),
+        ),
+      );
+    }
+  }
+
+  // (6e) tone 'memorial' segments must not have an empty body.
+  if (frontmatter.tone === 'memorial') {
+    const trimmedBody = parsed.body.trim();
+    if (trimmedBody.length === 0) {
+      errors.push(
+        err(
+          narrativePath,
+          '/tone',
+          `Narrative "${narrativePath}" has tone "memorial" but an empty body. Memorial segments must contain substantive content.`,
+          hint('memorial-segment-empty', 'Add narrative content to the memorial segment body.'),
+        ),
+      );
     }
   }
 

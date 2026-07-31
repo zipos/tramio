@@ -28,7 +28,7 @@ import type {
   TourSession,
   TourState,
 } from './state';
-import type { AcceptedUpdate, Geofence } from './types';
+import type { AcceptedUpdate, Entitlement, Geofence } from './types';
 import { resolveOverlappingTriggers } from './priority';
 
 // ─── Result type ────────────────────────────────────────────────────────────
@@ -365,12 +365,21 @@ function reduceEnded(state: EndedState, event: EngineEvent, _now: number): Reduc
 /**
  * Transition to Ended: emit ReleaseAll + schedule a 2s release timeout.
  * The reducer returns to Idle when the timer fires (Req 1.7).
+ *
+ * FIX 4: Cancel 'dr-entry' and 'deviation-timeout' timers before scheduling
+ * the release timeout. These are latent today (neither is currently scheduled
+ * in the Active path), but when Dead Reckoning or Deviation classification is
+ * wired up, a stale timer from tour A could fire into tour B and force a
+ * spurious transition. Cancelling pre-emptively is safe and cheap.
+ * @see Requirement 1.7 (2s release SLO)
  */
 function transitionToEnded(now: number): ReducerResult {
   const ended: EndedState = { phase: 'Ended', endedAtMs: now };
   return {
     state: ended,
     commands: [
+      { kind: 'CancelTimer', id: 'dr-entry' },
+      { kind: 'CancelTimer', id: 'deviation-timeout' },
       { kind: 'StopAudio' },
       { kind: 'ReleaseAll' },
       { kind: 'RequestLocationMode', mode: 'idle' },
@@ -410,7 +419,7 @@ function updateLastAccepted(session: TourSession, update: AcceptedUpdate): TourS
  */
 function updateEntitlements(
   session: TourSession,
-  entitlements: readonly import('./types').Entitlement[],
+  entitlements: readonly Entitlement[],
 ): TourSession {
   return { ...session, entitlements };
 }
@@ -423,11 +432,7 @@ function updateEntitlements(
  *   - Deviation suppression (Req 8.3)
  *   - Priority comparator for overlapping triggers (Req 1.6)
  */
-function handleGeofenceDwell(
-  state: ActiveState,
-  poiId: string,
-  now: number,
-): ReducerResult {
+function handleGeofenceDwell(state: ActiveState, poiId: string, now: number): ReducerResult {
   const { session } = state;
 
   // Consumed-set short-circuit: already played → no-op (Req 1.5)
@@ -591,8 +596,20 @@ function handleFocusLoss(
 
 /**
  * Handle FocusRegain for Active and Standby states.
- * If focusLostAtMs exists and gap < 10 minutes, emit ResumeAudio and clear.
- * If gap >= 10 minutes, discard the segment (clear playing and focusLostAtMs).
+ * If focusLostAtMs exists and gap < 10 minutes, emit ResumeAudio (only when
+ * a segment is actually playing) and clear focus-loss markers.
+ * If gap >= 10 minutes and a segment was playing, emit StopAudio and add
+ * the POI to the consumed set — the bus has demonstrably moved on.
+ *
+ * FIX 2: Guard ResumeAudio on session.playing being defined. Without this,
+ * FocusRegain between POIs would emit ResumeAudio for a non-existent session.
+ * @see Requirement 1.3 (single-segment invariant)
+ *
+ * FIX 3: In the >=10min branch, emit StopAudio (so the native side releases
+ * the paused player resource) and consume the POI (so it cannot replay when
+ * the bus passes the landmark again). Preserve consumed-set monotonicity by
+ * building a new Set.
+ * @see Requirement 1.4 (consumed set), 1.5 (no replay)
  */
 function handleFocusRegain(
   session: TourSession,
@@ -616,8 +633,12 @@ function handleFocusRegain(
   const commands: EngineCommand[] = [];
 
   if (elapsed < FOCUS_LOSS_TIMEOUT_MS) {
-    // Resume playback — native side tracks the actual offset
-    commands.push({ kind: 'ResumeAudio', offsetMs: 0 });
+    // FIX 2: Only emit ResumeAudio when a segment is actually playing.
+    // Focus may have been lost between POIs (nothing playing); resuming a
+    // non-existent playback session is invalid.
+    if (session.playing) {
+      commands.push({ kind: 'ResumeAudio', offsetMs: 0 });
+    }
     const { focusLostAtMs: _, pausedOffsetMs: __, ...rest } = session;
     const nextSession: TourSession = { ...rest };
 
@@ -631,9 +652,18 @@ function handleFocusRegain(
     return { state: { phase: 'Active', session: nextSession }, commands };
   }
 
-  // Gap >= 10 minutes: discard the playing segment
+  // Gap >= 10 minutes: discard the playing segment.
+  // FIX 3: When a segment was playing, emit StopAudio so the native side
+  // releases the paused player resource, and add the POI to the consumed
+  // set so it cannot replay. The bus has demonstrably moved on.
+  if (session.playing) {
+    commands.push({ kind: 'StopAudio' });
+  }
+  const consumed = session.playing
+    ? new Set([...session.consumed, session.playing.poiId])
+    : session.consumed;
   const { focusLostAtMs: _, pausedOffsetMs: __, playing: ___, ...rest } = session;
-  const nextSession: TourSession = { ...rest };
+  const nextSession: TourSession = { ...rest, consumed };
 
   if (phase === 'Standby') {
     const nextState: StandbyState = { phase: 'Standby', session: nextSession };
@@ -664,6 +694,11 @@ function handleFocusLossDeadReckoning(state: DeadReckoningState, now: number): R
 
 /**
  * Handle FocusRegain in DeadReckoning state.
+ *
+ * Same logic as handleFocusRegain but preserves the DeadReckoning phase.
+ * FIX 2: Guard ResumeAudio on session.playing being defined.
+ * FIX 3: In the >=10min branch, emit StopAudio and consume the POI.
+ * @see Requirement 1.3, 1.4, 1.5
  */
 function handleFocusRegainDeadReckoning(state: DeadReckoningState, now: number): ReducerResult {
   const { session } = state;
@@ -676,7 +711,10 @@ function handleFocusRegainDeadReckoning(state: DeadReckoningState, now: number):
   const commands: EngineCommand[] = [];
 
   if (elapsed < FOCUS_LOSS_TIMEOUT_MS) {
-    commands.push({ kind: 'ResumeAudio', offsetMs: 0 });
+    // FIX 2: Only emit ResumeAudio when a segment is actually playing.
+    if (session.playing) {
+      commands.push({ kind: 'ResumeAudio', offsetMs: 0 });
+    }
     const { focusLostAtMs: _, pausedOffsetMs: __, ...rest } = session;
     const nextSession: TourSession = { ...rest };
     return {
@@ -685,9 +723,16 @@ function handleFocusRegainDeadReckoning(state: DeadReckoningState, now: number):
     };
   }
 
-  // Gap >= 10 minutes: discard the playing segment
+  // Gap >= 10 minutes: discard the playing segment.
+  // FIX 3: Emit StopAudio and consume the POI when a segment was playing.
+  if (session.playing) {
+    commands.push({ kind: 'StopAudio' });
+  }
+  const consumed = session.playing
+    ? new Set([...session.consumed, session.playing.poiId])
+    : session.consumed;
   const { focusLostAtMs: _, pausedOffsetMs: __, playing: ___, ...rest } = session;
-  const nextSession: TourSession = { ...rest };
+  const nextSession: TourSession = { ...rest, consumed };
   return {
     state: { phase: 'DeadReckoning', session: nextSession, enteredAtMs: state.enteredAtMs },
     commands,

@@ -75,9 +75,17 @@ describe('prefilter (Stages 1 + 2)', () => {
     expect(prefilter(rawAt(0, [51, 17]), undefined)).toBeNull();
   });
 
-  it('passes when dt is zero (avoids division by zero)', () => {
+  it('rejects as spike when dt is zero and displacement exceeds tolerance', () => {
     const prev = rawAt(0, [51, 17]);
+    // ~131 m displacement with dt=0 is physically impossible — spike.
     const next = rawAt(0, [51.001, 17.001]);
+    expect(prefilter(next, prev)).toBe('spike');
+  });
+
+  it('passes when dt is zero and displacement is within jitter tolerance (<=5 m)', () => {
+    const prev = rawAt(0, [51, 17]);
+    // ~0.00003 deg lat ≈ 3.3 m — within the 5 m jitter tolerance.
+    const next = rawAt(0, [51.00003, 17]);
     expect(prefilter(next, prev)).toBeNull();
   });
 });
@@ -229,5 +237,96 @@ describe('step', () => {
         lastAccepted: s0.lastAccepted ?? null,
       }),
     ).toBe(snapshot);
+  });
+});
+
+// ─── FIX 1: Non-increasing timestamp spike rejection ────────────────────────
+
+describe('FIX 1: prefilter rejects large displacements on non-increasing timestamps', () => {
+  it('rejects out-of-order timestamp with large displacement (Android batch fix)', () => {
+    // Concrete case from the bug report: ts=1000 coord=A then ts=999 coord=B
+    // where B is 5 km away — physically impossible.
+    const prev = rawAt(1000, [51.0, 17.0]);
+    const curr = rawAt(999, [51.045, 17.0]); // ~5 km away, ts < prev.ts
+    expect(prefilter(curr, prev)).toBe('spike');
+  });
+
+  it('rejects equal-timestamp fix with large displacement', () => {
+    const prev = rawAt(5000, [51.0, 17.0]);
+    const curr = rawAt(5000, [51.01, 17.0]); // ~1.1 km away
+    expect(prefilter(curr, prev)).toBe('spike');
+  });
+
+  it('accepts equal-timestamp fix with small displacement (GPS jitter)', () => {
+    const prev = rawAt(5000, [51.0, 17.0]);
+    // ~3 m displacement — within the 5 m jitter tolerance
+    const curr = rawAt(5000, [51.000027, 17.0]);
+    expect(prefilter(curr, prev)).toBeNull();
+  });
+
+  it('accepts out-of-order timestamp with small displacement (GPS jitter)', () => {
+    const prev = rawAt(5000, [51.0, 17.0]);
+    // ~4 m displacement with earlier timestamp — jitter tolerance applies
+    const curr = rawAt(4999, [51.000036, 17.0]);
+    expect(prefilter(curr, prev)).toBeNull();
+  });
+
+  it('rejects displacement just over the 5 m tolerance at equal timestamp', () => {
+    const prev = rawAt(5000, [51.0, 17.0]);
+    // ~6.7 m displacement (0.00006 deg lat * 111320 m/deg ≈ 6.68 m) — over 5 m
+    const curr = rawAt(5000, [51.00006, 17.0]);
+    expect(prefilter(curr, prev)).toBe('spike');
+  });
+
+  it('does not affect the strictly-increasing timestamp path', () => {
+    // Normal case: strictly increasing timestamps use speed-based check
+    const prev = rawAt(0, [51.0, 17.0]);
+    // 33 m in 1 s = 33 m/s — just under the 33.33 m/s (120 km/h) limit
+    const dLat = 33 / 111_320;
+    const curr = rawAt(1000, [51.0 + dLat, 17.0]);
+    expect(prefilter(curr, prev)).toBeNull();
+  });
+});
+
+describe('FIX 1: pipeline step rejects out-of-order timestamps with large displacement', () => {
+  const geofences: readonly Geofence[] = [
+    {
+      poiId: 'poi-rynek',
+      geometry: { kind: 'circle', center: [51.0, 17.005], radiusMeters: 80 },
+      dwellSec: 3,
+      priority: 90,
+      authorIndex: 0,
+    },
+  ];
+
+  it('spurious almanac fix at ts-1 with 5km displacement is rejected by pipeline', () => {
+    let s = initialPipelineState(ROUTE, geofences);
+    // First fix accepted normally
+    const r0 = step(s, rawAt(1000, [51.0, 17.0]), 1000);
+    expect(isRejected(r0)).toBe(false);
+    s = (r0 as PipelineAccepted).nextState;
+
+    // Android batch: arrives with ts=999 (before prev) and 5 km displacement
+    const spurious = rawAt(999, [51.045, 17.0]);
+    const r1 = step(s, spurious, 999);
+    expect(isRejected(r1)).toBe(true);
+    if (isRejected(r1)) {
+      expect(r1.reject).toBe('spike');
+    }
+  });
+
+  it('rejected fix does not enter the EMA smoothing window', () => {
+    let s = initialPipelineState(ROUTE, geofences);
+    const r0 = step(s, rawAt(1000, [51.0, 17.005]), 1000);
+    expect(isRejected(r0)).toBe(false);
+    s = (r0 as PipelineAccepted).nextState;
+    expect(s.smoothingWindow).toHaveLength(1);
+
+    // Spurious fix rejected
+    const r1 = step(s, rawAt(999, [51.045, 17.0]), 999);
+    expect(isRejected(r1)).toBe(true);
+    // Window unchanged
+    expect(r1.nextState.smoothingWindow).toHaveLength(1);
+    expect(r1.nextState.smoothingWindow[0]).toEqual([51.0, 17.005]);
   });
 });

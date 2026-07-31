@@ -17,12 +17,7 @@ import * as fc from 'fast-check';
 
 import { GtfsFeed } from './feed';
 import { parseGtfsFeed } from './parser';
-import {
-  DR_DISABLED_DAYS,
-  evaluateGtfsAgePolicy,
-  STALE_WARNING_DAYS,
-  type GtfsAgePolicy,
-} from './policy';
+import { DR_DISABLED_DAYS, evaluateGtfsAgePolicy, STALE_WARNING_DAYS } from './policy';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -77,16 +72,13 @@ const REFERENCE_NOW = new Date('2024-06-15T12:00:00Z');
 describe('Property 16: GTFS-age policy controls warnings and dead-reckoning availability', () => {
   it('fresh feeds (age <= 30 days) have no warnings and DR enabled', () => {
     fc.assert(
-      fc.property(
-        fc.double({ min: 0, max: STALE_WARNING_DAYS, noNaN: true }),
-        (ageDays) => {
-          const feed = buildFeedWithAge(ageDays, REFERENCE_NOW);
-          const policy = evaluateGtfsAgePolicy(feed, { now: REFERENCE_NOW });
+      fc.property(fc.double({ min: 0, max: STALE_WARNING_DAYS, noNaN: true }), (ageDays) => {
+        const feed = buildFeedWithAge(ageDays, REFERENCE_NOW);
+        const policy = evaluateGtfsAgePolicy(feed, { now: REFERENCE_NOW });
 
-          expect(policy.staleWarning).toBe(false);
-          expect(policy.drDisabled).toBe(false);
-        },
-      ),
+        expect(policy.staleWarning).toBe(false);
+        expect(policy.drDisabled).toBe(false);
+      }),
       { numRuns: 100, seed: 42 },
     );
   });

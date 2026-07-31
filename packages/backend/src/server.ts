@@ -12,6 +12,7 @@ import { createKeyRegistry, type KeyRegistry } from './keys';
 import { signBytes, canonicalJsonStringify } from './signing';
 import { parseRange } from './range';
 import { createBackendStore, type BackendStore, type BackendStoreOptions } from './store';
+import { createRateLimiter, type RateLimiter } from './rateLimit';
 import type {
   CatalogListPayload,
   EntitlementsPayload,
@@ -23,6 +24,48 @@ import type {
   RestoreRequest,
   RestoreResponsePayload,
 } from './types';
+
+// ---------------------------------------------------------------------------
+// Receipt verification mode configuration
+// ---------------------------------------------------------------------------
+
+/**
+ * Controls how the receipt endpoint validates platform receipts.
+ *
+ * - `'stub'` — Dev-only: accepts any well-formed receipt without platform
+ *   verification. **MUST NEVER** be used in production. Logs a loud warning
+ *   at startup.
+ *
+ * - `'reject'` (default / fail-closed) — Rejects ALL receipt submissions
+ *   with 503 `receipt_verification_unavailable`. This is the safe default
+ *   when no verification backend is configured.
+ *
+ * TODO: Production receipt verification
+ * ─────────────────────────────────────────────────────────────────────────
+ * When wiring real IAP verification, add:
+ *
+ *   - `'apple'` mode: call Apple's StoreKit Server API v2
+ *     (https://developer.apple.com/documentation/appstoreserverapi)
+ *     - Endpoint: `GET /inApps/v2/history/{transactionId}`
+ *     - Requires: App Store Connect API key (Issuer ID, Key ID, P8 private key)
+ *     - Verify `signedTransactionInfo` JWS using Apple's public certificates
+ *     - Check `environment`, `bundleId`, `productId`, `expiresDate`
+ *
+ *   - `'google'` mode: call Google Play Developer API
+ *     (https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.products/get)
+ *     - Endpoint: `androidpublisher/v3/applications/{pkg}/purchases/products/{productId}/tokens/{token}`
+ *     - Requires: Google Cloud service account with Publisher permissions
+ *     - Verify `purchaseState === 0`, `consumptionState`, `orderId`
+ *     - For subscriptions use `purchases.subscriptionsv2.get`
+ *
+ * The verification function should return a structured result:
+ *   { valid: true, productId, transactionId, expiresAt? }
+ *   | { valid: false, reason: string }
+ *
+ * Map `productId` to the correct entitlement tier and expiry duration.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+export type ReceiptVerificationMode = 'stub' | 'reject';
 
 export interface BuildServerOptions {
   /** Pre-built store; defaults to `createBackendStore(storeOptions)`. */
@@ -39,6 +82,26 @@ export interface BuildServerOptions {
   readonly manifestSignatureRoute?: (bundleId: string, version: string) => string;
   /** Forwarded to Fastify's logger setting. */
   readonly logger?: boolean;
+
+  /**
+   * Receipt verification mode.
+   *
+   * - `'stub'` — accept any well-formed receipt (DEV ONLY).
+   * - `'reject'` — reject all receipts (fail-closed default).
+   *
+   * Can also be set via `TRAMIO_RECEIPT_MODE` env var (`stub` | `reject`).
+   * The constructor option takes precedence over the env var.
+   *
+   * @default 'reject' (fail-closed)
+   */
+  readonly receiptMode?: ReceiptVerificationMode;
+
+  /**
+   * Rate-limit configuration for receipt/restore endpoints.
+   * Defaults: 10 requests per 60 seconds per key.
+   */
+  readonly rateLimitMaxRequests?: number;
+  readonly rateLimitWindowMs?: number;
 }
 
 interface CatalogParams {
@@ -55,6 +118,37 @@ interface EntitlementsQuery {
   deviceId?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Input validation helpers
+// ---------------------------------------------------------------------------
+
+/** Max allowed string length for receipt fields (prevents memory abuse). */
+const MAX_FIELD_LENGTH = 4096;
+
+function isNonEmptyString(v: unknown): v is string {
+  return typeof v === 'string' && v.length > 0;
+}
+
+function isValidReceiptField(v: unknown): v is string {
+  return typeof v === 'string' && v.length > 0 && v.length <= MAX_FIELD_LENGTH;
+}
+
+// ---------------------------------------------------------------------------
+// Resolve receipt mode from options / env
+// ---------------------------------------------------------------------------
+
+function resolveReceiptMode(opts: BuildServerOptions): ReceiptVerificationMode {
+  if (opts.receiptMode !== undefined) return opts.receiptMode;
+  const envVal = process.env['TRAMIO_RECEIPT_MODE'];
+  if (envVal === 'stub') return 'stub';
+  // Fail closed: anything other than explicit 'stub' means reject.
+  return 'reject';
+}
+
+// ---------------------------------------------------------------------------
+// Server factory
+// ---------------------------------------------------------------------------
+
 /**
  * Build the Fastify instance. No `.listen()` here — the caller is in charge
  * of wiring up the actual transport (or letting Fastify's `inject()` do it
@@ -68,6 +162,42 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     opts.manifestSignatureRoute ??
     ((bundleId: string, version: string) =>
       `/v1/catalog/${encodeURIComponent(bundleId)}/${encodeURIComponent(version)}/manifest.lock.sig`);
+
+  const receiptMode = resolveReceiptMode(opts);
+
+  // Emit a prominent startup warning when running with the dev stub path.
+  if (receiptMode === 'stub') {
+    const warning = [
+      '',
+      '╔══════════════════════════════════════════════════════════════════╗',
+      '║  ⚠️  RECEIPT VERIFICATION DISABLED — DEV STUB MODE ACTIVE  ⚠️   ║',
+      '║                                                                  ║',
+      '║  The receipt endpoint accepts ANY well-formed receipt without     ║',
+      '║  contacting Apple StoreKit or Google Play Billing.               ║',
+      '║                                                                  ║',
+      '║  DO NOT deploy this configuration to the public internet.        ║',
+      '║  Set TRAMIO_RECEIPT_MODE=reject or remove the stub override.     ║',
+      '╚══════════════════════════════════════════════════════════════════╝',
+      '',
+    ].join('\n');
+    // Use stderr so it shows up regardless of Fastify logger configuration.
+    process.stderr.write(warning);
+  }
+
+  // Rate limiter for receipt + restore endpoints.
+  const rateLimitMaxRequests = opts.rateLimitMaxRequests ?? 10;
+  const rateLimitWindowMs = opts.rateLimitWindowMs ?? 60_000;
+  const receiptLimiter: RateLimiter = createRateLimiter({
+    maxRequests: rateLimitMaxRequests,
+    windowMs: rateLimitWindowMs,
+    sweepIntervalMs: 0, // No background sweep in server — rely on lazy eviction
+  });
+
+  // Ensure limiter is disposed on server close to prevent timer leaks in tests.
+  fastify.addHook('onClose', (_instance, done) => {
+    receiptLimiter.dispose();
+    done();
+  });
 
   // --- /v1/catalog ---------------------------------------------------------
   fastify.get('/v1/catalog', async (_req, reply) => {
@@ -169,16 +299,36 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     '/v1/entitlements/receipt',
     async (req, reply) => {
       const body = req.body ?? {};
+
+      // --- Input validation (strict) ---
       if (
-        typeof body.deviceId !== 'string' ||
-        typeof body.platformReceiptId !== 'string' ||
-        typeof body.platformReceipt !== 'string'
+        !isValidReceiptField(body.deviceId) ||
+        !isValidReceiptField(body.platformReceiptId) ||
+        !isValidReceiptField(body.platformReceipt)
       ) {
         return reply.code(400).send({ error: 'invalid_receipt' });
       }
-      // The MVP grants a single time_pass per receipt. The full validation
-      // pipeline lands when the platform stores wire up (post-MVP). Until
-      // then the backend trusts the receipt format and grants a 24h pass.
+
+      // --- Rate limiting ---
+      const limitKey = body.deviceId;
+      const limitResult = receiptLimiter.consume(limitKey);
+      if (!limitResult.allowed) {
+        reply.header('Retry-After', String(Math.ceil((limitResult.resetsAt - Date.now()) / 1000)));
+        return reply.code(429).send({ error: 'rate_limit_exceeded' });
+      }
+
+      // --- Verification gate (FAIL CLOSED) ---
+      if (receiptMode === 'reject') {
+        return reply.code(503).send({ error: 'receipt_verification_unavailable' });
+      }
+
+      // receiptMode === 'stub': dev-only path grants without platform verification.
+
+      // --- Replay protection ---
+      // The store's recordReceipt is idempotent on (deviceId, platformReceiptId):
+      // if the same receipt was already recorded, it returns the existing grant
+      // without creating a duplicate. This prevents replay attacks from extending
+      // or duplicating entitlements.
       const grantedAt = new Date().toISOString();
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
       const recorded = store.recordReceipt(body.deviceId, body.platformReceiptId, [
@@ -199,18 +349,43 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     '/v1/entitlements/restore',
     async (req, reply) => {
       const body = req.body ?? {};
-      if (
-        typeof body.deviceId !== 'string' ||
-        !Array.isArray(body.receipts) ||
-        !body.receipts.every(
-          (r) =>
-            r != null &&
-            typeof (r as { platformReceiptId?: unknown }).platformReceiptId === 'string' &&
-            typeof (r as { platformReceipt?: unknown }).platformReceipt === 'string',
-        )
-      ) {
+
+      // --- Input validation (strict) ---
+      if (!isNonEmptyString(body.deviceId) || body.deviceId.length > MAX_FIELD_LENGTH) {
         return reply.code(400).send({ error: 'invalid_restore' });
       }
+      if (!Array.isArray(body.receipts)) {
+        return reply.code(400).send({ error: 'invalid_restore' });
+      }
+      // Cap receipts array to prevent unbounded processing.
+      if (body.receipts.length > 100) {
+        return reply.code(400).send({ error: 'too_many_receipts' });
+      }
+      // Validate each entry in the receipts array.
+      const receiptsValid = body.receipts.every(
+        (r) =>
+          r != null &&
+          isValidReceiptField((r as { platformReceiptId?: unknown }).platformReceiptId) &&
+          isValidReceiptField((r as { platformReceipt?: unknown }).platformReceipt),
+      );
+      if (!receiptsValid) {
+        return reply.code(400).send({ error: 'invalid_restore' });
+      }
+
+      // --- Rate limiting ---
+      const limitKey = body.deviceId;
+      const limitResult = receiptLimiter.consume(limitKey);
+      if (!limitResult.allowed) {
+        reply.header('Retry-After', String(Math.ceil((limitResult.resetsAt - Date.now()) / 1000)));
+        return reply.code(429).send({ error: 'rate_limit_exceeded' });
+      }
+
+      // --- Verification gate (FAIL CLOSED) ---
+      if (receiptMode === 'reject') {
+        return reply.code(503).send({ error: 'receipt_verification_unavailable' });
+      }
+
+      // receiptMode === 'stub': dev-only path grants without platform verification.
       const ids = body.receipts.map((r) => r.platformReceiptId);
       const { entitlements, expiryUtc } = store.restoreReceipts(body.deviceId, ids);
       const payload: RestoreResponsePayload = {

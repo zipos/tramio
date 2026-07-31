@@ -92,13 +92,18 @@ export class MeteredConnectionBlockError extends Error {
  * exempt from the tour-active block. These are used for communication
  * with co-located services (e.g. the self-hosted backend running on
  * the same device during development, or IPC channels).
+ *
+ * Only specific emulator gateway addresses are exempted — NOT the
+ * entire 10.0.0.0/16 range, which is commonly used by corporate and
+ * school networks where transit riders connect via café Wi-Fi.
  */
 const LOOPBACK_PATTERNS: readonly RegExp[] = [
   /^localhost$/i,
   /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/,
   /^\[::1\]$/,
   /^0\.0\.0\.0$/,
-  /^10\.0\.\d{1,3}\.\d{1,3}$/, // common emulator host addresses
+  /^10\.0\.2\.2$/, // Android emulator host gateway
+  /^10\.0\.3\.2$/, // Genymotion emulator host gateway
 ];
 
 /**
@@ -133,7 +138,11 @@ export type FetchImpl = (
     body?: string | Buffer | Uint8Array;
     signal?: AbortSignal;
   },
-) => Promise<{ status: number; headers: { get(name: string): string | null }; arrayBuffer(): Promise<ArrayBuffer> }>;
+) => Promise<{
+  status: number;
+  headers: { get(name: string): string | null };
+  arrayBuffer(): Promise<ArrayBuffer>;
+}>;
 
 export interface HttpClientDeps {
   tourState: TourStateProvider;
@@ -148,8 +157,7 @@ export interface HttpClientDeps {
  */
 export function createHttpClient(deps: HttpClientDeps) {
   const { tourState, networkInfo } = deps;
-  const fetchFn: FetchImpl =
-    deps.fetch ?? (globalThis.fetch as unknown as FetchImpl);
+  const fetchFn: FetchImpl = deps.fetch ?? (globalThis.fetch as unknown as FetchImpl);
 
   /**
    * Execute an HTTP request through the chokepoint.
@@ -159,7 +167,15 @@ export function createHttpClient(deps: HttpClientDeps) {
    *         and `allowMetered` is not set.
    */
   async function request(options: HttpRequestOptions): Promise<HttpResponse> {
-    const { url, method = 'GET', headers = {}, body, intent = 'probe', allowMetered = false, signal } = options;
+    const {
+      url,
+      method = 'GET',
+      headers = {},
+      body,
+      intent = 'probe',
+      allowMetered = false,
+      signal,
+    } = options;
 
     // --- Guard 1: Tour-active block (Req 3.2) ---
     // While a tour is active, no outbound requests are allowed except

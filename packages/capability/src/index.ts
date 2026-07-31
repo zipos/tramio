@@ -33,12 +33,7 @@ export type {
   PerPlatformBaseline,
 } from './types';
 
-export {
-  ALL_CAPABILITY_FLAGS,
-  OS_MATRIX,
-  osMatrixDefaults,
-  osMatrixSupports,
-} from './os-matrix';
+export { ALL_CAPABILITY_FLAGS, OS_MATRIX, osMatrixDefaults, osMatrixSupports } from './os-matrix';
 
 export { defaultCapabilities, probeCapabilities } from './probes';
 

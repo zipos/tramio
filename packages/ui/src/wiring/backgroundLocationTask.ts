@@ -7,6 +7,16 @@
 //
 // The task must be defined at module load time (imported from index.ts before
 // the app root component).
+//
+// BUG 3 FIX: When the task callback fires with no bound session (app was
+// killed mid-tour and cold-started by the OS to deliver location), we
+// self-heal by stopping background updates. Guarded to run at most once
+// per cold start to prevent a stop-storm.
+//
+// BUG 5 FIX: After a pipeline fire, advance the stored pipeline state's
+// consumed set so the pipeline short-circuits that POI on subsequent fixes.
+// Also drop the fired POI's dwell entry. Pure value update — no engine
+// mutation.
 
 import { InteractionManager, Platform } from 'react-native';
 import * as Location from 'expo-location';
@@ -51,6 +61,10 @@ interface LocationSession {
 
 let session: LocationSession | null = null;
 
+// BUG 3 FIX: guard to prevent a stop-storm — only attempt the orphan
+// self-heal once per cold start.
+let orphanStopAttempted = false;
+
 /** Bind the active tour's pipeline and event callbacks for the background task. */
 export function bindLocationSession(
   route: readonly LatLng[],
@@ -63,6 +77,8 @@ export function bindLocationSession(
     events,
     isActive,
   };
+  // Reset the orphan guard when a new session binds (new tour started).
+  orphanStopAttempted = false;
 }
 
 export function unbindLocationSession(): void {
@@ -87,9 +103,25 @@ function ingestLocation(loc: Location.LocationObject): void {
   const out = step(session.pipeline, raw, raw.ts);
   if (isRejected(out)) return;
 
-  session.pipeline = out.nextState;
+  // BUG 5 FIX: after a fire, advance the consumed set and drop dwell entry
+  // so the pipeline short-circuits that POI on subsequent fixes.
+  let nextPipeline = out.nextState;
+  if (out.fire !== undefined) {
+    const newConsumed = new Set(nextPipeline.consumed);
+    newConsumed.add(out.fire);
+    // Drop the fired POI's dwell entry — it will never fire again.
+    const { [out.fire]: _dropped, ...remainingDwell } = nextPipeline.dwell;
+    nextPipeline = {
+      ...nextPipeline,
+      consumed: newConsumed,
+      dwell: remainingDwell,
+    };
+  }
+
+  session.pipeline = nextPipeline;
 
   const events = session.events;
+  const fire = out.fire;
   runOnMainThread(() => {
     if (session === null || !session.isActive()) return;
     events.onAccepted({
@@ -101,8 +133,8 @@ function ingestLocation(loc: Location.LocationObject): void {
       ...(raw.speedMps != null ? { speedMps: raw.speedMps } : {}),
       ...(raw.headingDeg != null ? { headingDeg: raw.headingDeg } : {}),
     });
-    if (out.fire !== undefined) {
-      events.onGeofenceDwell(out.fire);
+    if (fire !== undefined) {
+      events.onGeofenceDwell(fire);
     }
   });
 }
@@ -117,6 +149,17 @@ export function ensureLocationTaskDefined(): void {
 
   TaskManager.defineTask<LocationTaskData>(LOCATION_TASK_NAME, async ({ data, error }) => {
     if (error !== null) return;
+
+    // BUG 3 FIX: if there is no bound session, the app was killed mid-tour
+    // and cold-started by the OS. Self-heal by stopping updates so GPS does
+    // not run forever draining the battery.
+    if (session === null) {
+      if (!orphanStopAttempted) {
+        orphanStopAttempted = true;
+        void stopBackgroundLocationUpdates().catch(() => undefined);
+      }
+      return;
+    }
 
     const locations = data?.locations ?? [];
     for (const loc of locations) {

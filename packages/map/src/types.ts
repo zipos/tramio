@@ -24,6 +24,17 @@ export interface TilePackRef {
 }
 
 /**
+ * A POI marker to render on the map. Circle geometry with an optional
+ * consumed flag to distinguish already-played POIs.
+ */
+export interface PoiMarker {
+  poiId: string;
+  center: readonly [number, number];
+  radiusMeters: number;
+  consumed?: boolean;
+}
+
+/**
  * Props for the OfflineMap component.
  */
 export interface OfflineMapProps {
@@ -54,6 +65,26 @@ export interface OfflineMapProps {
 
   /** Called when the map finishes loading. */
   onMapReady?: () => void;
+
+  /**
+   * Route polyline as [lat, lon] pairs (engine coordinate order).
+   * Rendered as a GeoJSON LineString ShapeSource + LineLayer.
+   * Coordinate order is converted internally to GeoJSON [lon, lat].
+   */
+  route?: readonly (readonly [number, number])[];
+
+  /**
+   * POI circle markers to display on the map. Each marker includes
+   * a center ([lat, lon]), radiusMeters, and an optional consumed flag.
+   */
+  pois?: readonly PoiMarker[];
+
+  /**
+   * Current user position as [lat, lon]. When provided, a user position
+   * marker is rendered on the map and the camera follows it (unless the
+   * user has panned manually).
+   */
+  userPosition?: readonly [number, number];
 }
 
 /**

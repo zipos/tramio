@@ -32,6 +32,7 @@ export type {
 
 export {
   MAX_ACCURACY_M,
+  MAX_DISPLACEMENT_ZERO_DT_M,
   MAX_SPEED_MPS,
   SMOOTH_WINDOW,
   angularDiffDeg,

@@ -73,6 +73,35 @@ describe('Authoring_Schema documents (task 2.1)', () => {
       const bad = { ...validManifest, languages: ['ENG'] }; // 3 letters, uppercase
       expect(validate(bad)).toBe(false);
     });
+
+    it('accepts transitLine.mode "bus"', () => {
+      const ok = {
+        ...validManifest,
+        transitLine: { ...validManifest.transitLine, mode: 'bus' },
+      };
+      expect(validate(ok)).toBe(true);
+    });
+
+    it('accepts transitLine.mode "tram"', () => {
+      const ok = {
+        ...validManifest,
+        transitLine: { ...validManifest.transitLine, mode: 'tram' },
+      };
+      expect(validate(ok)).toBe(true);
+    });
+
+    it('rejects transitLine.mode "metro"', () => {
+      const bad = {
+        ...validManifest,
+        transitLine: { ...validManifest.transitLine, mode: 'metro' },
+      };
+      expect(validate(bad)).toBe(false);
+    });
+
+    it('accepts transitLine without mode (back-compat)', () => {
+      // The canonical validManifest has no mode — it should still pass.
+      expect(validate(validManifest)).toBe(true);
+    });
   });
 
   describe('route schema', () => {

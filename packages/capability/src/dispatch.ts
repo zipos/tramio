@@ -60,9 +60,7 @@ export interface CapabilityVariants<T> {
  * below rejects any other arity so misuse fails loud at the dispatch site
  * rather than silently picking an arbitrary flag.
  */
-export type CapabilityDispatchMapping<T> = Partial<
-  Record<CapabilityFlag, CapabilityVariants<T>>
->;
+export type CapabilityDispatchMapping<T> = Partial<Record<CapabilityFlag, CapabilityVariants<T>>>;
 
 /**
  * Pick the modern or fallback variant for a capability flag.

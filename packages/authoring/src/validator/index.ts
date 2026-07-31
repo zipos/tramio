@@ -1,10 +1,6 @@
 // Public surface of the Content_Bundle validator (task 2.2).
 
-export type {
-  BundleFileSystem,
-  ReadResult,
-  VirtualBundle,
-} from './fs';
+export type { BundleFileSystem, ReadResult, VirtualBundle } from './fs';
 export { nodeFileSystem, virtualFileSystem } from './fs';
 
 export type {
@@ -13,6 +9,7 @@ export type {
   HintCode,
   LoadedBundle,
   LoadedNarrative,
+  ValidateOptions,
   ValidationResult,
 } from './types';
 

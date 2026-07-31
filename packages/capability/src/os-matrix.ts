@@ -226,10 +226,7 @@ export function osMatrixSupports(
  * the conservative-baseline answer before any native probe contributes; it is
  * what the engine would see if every native probe declined to answer.
  */
-export function osMatrixDefaults(
-  platform: CapabilityPlatform,
-  osVersion: number,
-): Capabilities {
+export function osMatrixDefaults(platform: CapabilityPlatform, osVersion: number): Capabilities {
   const out: Record<CapabilityFlag, boolean> = {
     regionMonitoringV2: osMatrixSupports('regionMonitoringV2', platform, osVersion),
     liveActivities: osMatrixSupports('liveActivities', platform, osVersion),

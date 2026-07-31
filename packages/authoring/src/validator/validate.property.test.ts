@@ -505,63 +505,58 @@ describe('Property 13: Authoring_Schema validator rejects all violations and acc
 
   it('rejects every single-mutation violation and reports the correct file path and JSON pointer', () => {
     fc.assert(
-      fc.property(
-        fc.integer({ min: 0, max: mutations.length - 1 }),
-        (mutationIndex) => {
-          const mutation = mutations[mutationIndex]!;
+      fc.property(fc.integer({ min: 0, max: mutations.length - 1 }), (mutationIndex) => {
+        const mutation = mutations[mutationIndex]!;
 
-          // 1. Verify the unmutated bundle passes (sanity check per run).
-          const baseResult = validateBundle(virtualFileSystem(buildValidBundle()));
-          if (!baseResult.ok) {
-            return false; // Should never happen; fail fast.
-          }
+        // 1. Verify the unmutated bundle passes (sanity check per run).
+        const baseResult = validateBundle(virtualFileSystem(buildValidBundle()));
+        if (!baseResult.ok) {
+          return false; // Should never happen; fail fast.
+        }
 
-          // 2. Apply exactly one mutation.
-          const bundle = buildValidBundle();
-          mutation.apply(bundle);
+        // 2. Apply exactly one mutation.
+        const bundle = buildValidBundle();
+        mutation.apply(bundle);
 
-          // 3. Assert the mutated bundle is rejected.
-          const result = validateBundle(virtualFileSystem(bundle));
-          if (result.ok) {
-            throw new Error(
-              `Mutation "${mutation.name}" was NOT rejected by the validator. ` +
-                `Expected rejection with error at ${mutation.expectedFilePath} ` +
-                `${mutation.expectedPointerPrefix}`,
-            );
-          }
-
-          // 4. Assert at least one error points to the expected file path.
-          const matchingFileErrors = result.errors.filter(
-            (e) => e.filePath === mutation.expectedFilePath,
+        // 3. Assert the mutated bundle is rejected.
+        const result = validateBundle(virtualFileSystem(bundle));
+        if (result.ok) {
+          throw new Error(
+            `Mutation "${mutation.name}" was NOT rejected by the validator. ` +
+              `Expected rejection with error at ${mutation.expectedFilePath} ` +
+              `${mutation.expectedPointerPrefix}`,
           );
-          if (matchingFileErrors.length === 0) {
-            throw new Error(
-              `Mutation "${mutation.name}" was rejected, but no error points to ` +
-                `file "${mutation.expectedFilePath}". Errors:\n` +
-                result.errors
-                  .map((e) => `  - ${e.filePath} ${e.jsonPointer} :: ${e.message}`)
-                  .join('\n'),
-            );
-          }
+        }
 
-          // 5. Assert at least one error's JSON pointer starts with the expected prefix.
-          const matchingPointerErrors = matchingFileErrors.filter((e) =>
-            e.jsonPointer.startsWith(mutation.expectedPointerPrefix),
+        // 4. Assert at least one error points to the expected file path.
+        const matchingFileErrors = result.errors.filter(
+          (e) => e.filePath === mutation.expectedFilePath,
+        );
+        if (matchingFileErrors.length === 0) {
+          throw new Error(
+            `Mutation "${mutation.name}" was rejected, but no error points to ` +
+              `file "${mutation.expectedFilePath}". Errors:\n` +
+              result.errors
+                .map((e) => `  - ${e.filePath} ${e.jsonPointer} :: ${e.message}`)
+                .join('\n'),
           );
-          if (matchingPointerErrors.length === 0) {
-            throw new Error(
-              `Mutation "${mutation.name}" was rejected at file "${mutation.expectedFilePath}", ` +
-                `but no error's JSON pointer starts with "${mutation.expectedPointerPrefix}". ` +
-                `Pointers found:\n` +
-                matchingFileErrors
-                  .map((e) => `  - ${e.jsonPointer} :: ${e.message}`)
-                  .join('\n'),
-            );
-          }
+        }
 
-          return true;
-        },
-      ),
+        // 5. Assert at least one error's JSON pointer starts with the expected prefix.
+        const matchingPointerErrors = matchingFileErrors.filter((e) =>
+          e.jsonPointer.startsWith(mutation.expectedPointerPrefix),
+        );
+        if (matchingPointerErrors.length === 0) {
+          throw new Error(
+            `Mutation "${mutation.name}" was rejected at file "${mutation.expectedFilePath}", ` +
+              `but no error's JSON pointer starts with "${mutation.expectedPointerPrefix}". ` +
+              `Pointers found:\n` +
+              matchingFileErrors.map((e) => `  - ${e.jsonPointer} :: ${e.message}`).join('\n'),
+          );
+        }
+
+        return true;
+      }),
       { numRuns: 200, seed: 42 },
     );
   });

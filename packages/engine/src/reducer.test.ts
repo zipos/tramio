@@ -681,3 +681,235 @@ describe('Priority comparator integration (Req 1.6)', () => {
     );
   });
 });
+
+// ─── Focus Loss / Regain (FIX 2, FIX 3) ────────────────────────────────────
+
+describe('FocusLoss / FocusRegain (FIX 2, FIX 3)', () => {
+  describe('FIX 2: FocusRegain does NOT emit ResumeAudio when nothing is playing', () => {
+    it('emits no commands when Active and nothing was playing', () => {
+      const state = makeActiveState({ focusLostAtMs: NOW - 5000 });
+      const event: EngineEvent = { kind: 'FocusRegain' };
+      const result = reduce(state, event, NOW);
+
+      expect(result.state.phase).toBe('Active');
+      // No ResumeAudio should be emitted when nothing was playing
+      expect(result.commands).toHaveLength(0);
+      const active = result.state as ActiveState;
+      expect(active.session.focusLostAtMs).toBeUndefined();
+    });
+
+    it('emits ResumeAudio when Active and a segment WAS playing', () => {
+      const state = makeActiveState({
+        focusLostAtMs: NOW - 5000,
+        playing: { segmentId: 'poi-1:en', poiId: 'poi-1', startedAtMs: NOW - 10000 },
+      });
+      const event: EngineEvent = { kind: 'FocusRegain' };
+      const result = reduce(state, event, NOW);
+
+      expect(result.state.phase).toBe('Active');
+      expect(result.commands).toContainEqual({ kind: 'ResumeAudio', offsetMs: 0 });
+    });
+
+    it('emits no commands in DeadReckoning when nothing was playing', () => {
+      const state: DeadReckoningState = {
+        phase: 'DeadReckoning',
+        session: makeSession({ focusLostAtMs: NOW - 5000 }),
+        enteredAtMs: NOW - 20000,
+      };
+      const event: EngineEvent = { kind: 'FocusRegain' };
+      const result = reduce(state, event, NOW);
+
+      expect(result.state.phase).toBe('DeadReckoning');
+      expect(result.commands).toHaveLength(0);
+    });
+
+    it('emits ResumeAudio in DeadReckoning when a segment WAS playing', () => {
+      const state: DeadReckoningState = {
+        phase: 'DeadReckoning',
+        session: makeSession({
+          focusLostAtMs: NOW - 5000,
+          playing: { segmentId: 'poi-1:en', poiId: 'poi-1', startedAtMs: NOW - 10000 },
+        }),
+        enteredAtMs: NOW - 20000,
+      };
+      const event: EngineEvent = { kind: 'FocusRegain' };
+      const result = reduce(state, event, NOW);
+
+      expect(result.state.phase).toBe('DeadReckoning');
+      expect(result.commands).toContainEqual({ kind: 'ResumeAudio', offsetMs: 0 });
+    });
+
+    it('emits no commands in Standby when nothing was playing', () => {
+      const state: StandbyState = {
+        phase: 'Standby',
+        session: makeSession({ focusLostAtMs: NOW - 5000 }),
+        standbyTrackId: 'trivia-test',
+      };
+      const event: EngineEvent = { kind: 'FocusRegain' };
+      const result = reduce(state, event, NOW);
+
+      expect(result.state.phase).toBe('Standby');
+      expect(result.commands).toHaveLength(0);
+    });
+  });
+
+  describe('FIX 3: >=10min focus regain emits StopAudio and consumes the POI', () => {
+    const TEN_MINUTES = 600_000;
+
+    it('emits StopAudio and consumes POI when Active + segment was playing + gap >= 10 min', () => {
+      const state = makeActiveState({
+        focusLostAtMs: NOW - TEN_MINUTES - 1000,
+        playing: { segmentId: 'poi-1:en', poiId: 'poi-1', startedAtMs: NOW - TEN_MINUTES - 5000 },
+      });
+      const event: EngineEvent = { kind: 'FocusRegain' };
+      const result = reduce(state, event, NOW);
+
+      expect(result.state.phase).toBe('Active');
+      // StopAudio emitted so native side releases paused player resource
+      expect(result.commands).toContainEqual({ kind: 'StopAudio' });
+      // POI is consumed so it cannot replay later
+      const active = result.state as ActiveState;
+      expect(active.session.consumed.has('poi-1')).toBe(true);
+      // Playing is cleared
+      expect(active.session.playing).toBeUndefined();
+    });
+
+    it('consumes POI in DeadReckoning when gap >= 10 min and segment was playing', () => {
+      const state: DeadReckoningState = {
+        phase: 'DeadReckoning',
+        session: makeSession({
+          focusLostAtMs: NOW - TEN_MINUTES - 1000,
+          playing: {
+            segmentId: 'poi-2:en',
+            poiId: 'poi-2',
+            startedAtMs: NOW - TEN_MINUTES - 5000,
+          },
+        }),
+        enteredAtMs: NOW - TEN_MINUTES - 20000,
+      };
+      const event: EngineEvent = { kind: 'FocusRegain' };
+      const result = reduce(state, event, NOW);
+
+      expect(result.state.phase).toBe('DeadReckoning');
+      expect(result.commands).toContainEqual({ kind: 'StopAudio' });
+      const dr = result.state as DeadReckoningState;
+      expect(dr.session.consumed.has('poi-2')).toBe(true);
+      expect(dr.session.playing).toBeUndefined();
+    });
+
+    it('does NOT emit StopAudio when gap >= 10 min but nothing was playing', () => {
+      const state = makeActiveState({
+        focusLostAtMs: NOW - TEN_MINUTES - 1000,
+        // no playing segment
+      });
+      const event: EngineEvent = { kind: 'FocusRegain' };
+      const result = reduce(state, event, NOW);
+
+      expect(result.state.phase).toBe('Active');
+      expect(result.commands).toHaveLength(0);
+      const active = result.state as ActiveState;
+      expect(active.session.focusLostAtMs).toBeUndefined();
+    });
+
+    it('preserves consumed-set monotonicity (new Set, never mutate)', () => {
+      const existingConsumed = new Set(['poi-2']);
+      const state = makeActiveState({
+        consumed: existingConsumed,
+        focusLostAtMs: NOW - TEN_MINUTES - 1000,
+        playing: { segmentId: 'poi-1:en', poiId: 'poi-1', startedAtMs: NOW - TEN_MINUTES - 5000 },
+      });
+      const event: EngineEvent = { kind: 'FocusRegain' };
+      const result = reduce(state, event, NOW);
+
+      const active = result.state as ActiveState;
+      // Both old and new entries present
+      expect(active.session.consumed.has('poi-1')).toBe(true);
+      expect(active.session.consumed.has('poi-2')).toBe(true);
+      // Original set was not mutated
+      expect(existingConsumed.size).toBe(1);
+      expect(existingConsumed.has('poi-1')).toBe(false);
+    });
+
+    it('consumed POI from focus-regain timeout does not replay on subsequent GeofenceDwell', () => {
+      // Setup: focus lost for >= 10 min with poi-1 playing
+      const state = makeActiveState({
+        focusLostAtMs: NOW - TEN_MINUTES - 1000,
+        playing: { segmentId: 'poi-1:en', poiId: 'poi-1', startedAtMs: NOW - TEN_MINUTES - 5000 },
+      });
+
+      // FocusRegain consumes poi-1
+      let result = reduce(state, { kind: 'FocusRegain' }, NOW);
+      const active = result.state as ActiveState;
+      expect(active.session.consumed.has('poi-1')).toBe(true);
+
+      // Subsequent GeofenceDwell for poi-1 is a no-op
+      result = reduce(result.state, { kind: 'GeofenceDwell', poiId: 'poi-1' }, NOW + 1000);
+      const active2 = result.state as ActiveState;
+      expect(active2.session.playing).toBeUndefined();
+      expect(result.commands).toHaveLength(0);
+    });
+  });
+});
+
+// ─── Timer cancellation on tour end (FIX 4) ────────────────────────────────
+
+describe('FIX 4: transitionToEnded cancels stale timers', () => {
+  it('emits CancelTimer for dr-entry and deviation-timeout before releasing', () => {
+    const state = makeActiveState();
+    const event: EngineEvent = { kind: 'UserCommand', cmd: 'end' };
+    const result = reduce(state, event, NOW);
+
+    expect(result.state.phase).toBe('Ended');
+    expect(result.commands).toContainEqual({ kind: 'CancelTimer', id: 'dr-entry' });
+    expect(result.commands).toContainEqual({ kind: 'CancelTimer', id: 'deviation-timeout' });
+  });
+
+  it('preserves the 2s release SLO — ScheduleTimer still present', () => {
+    const state = makeActiveState();
+    const event: EngineEvent = { kind: 'UserCommand', cmd: 'end' };
+    const result = reduce(state, event, NOW);
+
+    expect(result.commands).toContainEqual({
+      kind: 'ScheduleTimer',
+      id: 'release-timeout',
+      afterMs: 2000,
+    });
+  });
+
+  it('CancelTimer commands precede StopAudio and ReleaseAll (ordering)', () => {
+    const state = makeActiveState();
+    const event: EngineEvent = { kind: 'UserCommand', cmd: 'end' };
+    const result = reduce(state, event, NOW);
+
+    const kinds = result.commands.map((c) => c.kind);
+    const cancelDrIdx = kinds.indexOf('CancelTimer');
+    const stopAudioIdx = kinds.indexOf('StopAudio');
+    const releaseIdx = kinds.indexOf('ReleaseAll');
+
+    expect(cancelDrIdx).toBeLessThan(stopAudioIdx);
+    expect(cancelDrIdx).toBeLessThan(releaseIdx);
+  });
+
+  it('cancels timers from all phases that transition to Ended', () => {
+    // Deviation → Ended
+    const deviationState: DeviationState = {
+      phase: 'Deviation',
+      session: makeSession({ deviationPending: true }),
+      detectedAtMs: NOW - 60000,
+      promptVisible: true,
+    };
+    const result = reduce(deviationState, { kind: 'UserCommand', cmd: 'end' }, NOW);
+    expect(result.commands).toContainEqual({ kind: 'CancelTimer', id: 'dr-entry' });
+    expect(result.commands).toContainEqual({ kind: 'CancelTimer', id: 'deviation-timeout' });
+
+    // DeadReckoning → Ended
+    const drState: DeadReckoningState = {
+      phase: 'DeadReckoning',
+      session: makeSession(),
+      enteredAtMs: NOW - 15000,
+    };
+    const result2 = reduce(drState, { kind: 'UserCommand', cmd: 'end' }, NOW);
+    expect(result2.commands).toContainEqual({ kind: 'CancelTimer', id: 'dr-entry' });
+    expect(result2.commands).toContainEqual({ kind: 'CancelTimer', id: 'deviation-timeout' });
+  });
+});

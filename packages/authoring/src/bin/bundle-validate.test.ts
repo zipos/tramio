@@ -134,18 +134,19 @@ describe('bundle-validate CLI (task 2.3)', () => {
       expect(parsed.directory).toBe('/some/bundle');
       expect(parsed.options.json).toBe(false);
       expect(parsed.options.strict).toBe(false);
+      expect(parsed.options.release).toBe(false);
     });
 
     it('parses --json and --strict flags in either order', () => {
       const a = parseArgs(['--json', '--strict', '/x']);
       expect(a.ok).toBe(true);
       if (!a.ok) return;
-      expect(a.options).toEqual({ json: true, strict: true });
+      expect(a.options).toEqual({ json: true, strict: true, release: false });
 
       const b = parseArgs(['/x', '--strict', '--json']);
       expect(b.ok).toBe(true);
       if (!b.ok) return;
-      expect(b.options).toEqual({ json: true, strict: true });
+      expect(b.options).toEqual({ json: true, strict: true, release: false });
     });
 
     it('rejects an unknown flag', () => {
@@ -175,7 +176,7 @@ describe('bundle-validate CLI (task 2.3)', () => {
       const { io, out, err } = makeIo();
       const code = runCli(
         virtualFileSystem(buildValidBundle()),
-        { json: false, strict: false },
+        { json: false, strict: false, release: false },
         io,
       );
       expect(code).toBe(0);
@@ -185,7 +186,11 @@ describe('bundle-validate CLI (task 2.3)', () => {
 
     it('exits 0 with an empty JSON array in --json mode', () => {
       const { io, out, err } = makeIo();
-      const code = runCli(virtualFileSystem(buildValidBundle()), { json: true, strict: false }, io);
+      const code = runCli(
+        virtualFileSystem(buildValidBundle()),
+        { json: true, strict: false, release: false },
+        io,
+      );
       expect(code).toBe(0);
       expect(err).toEqual([]);
       expect(out).toEqual(['[]']);
@@ -197,7 +202,11 @@ describe('bundle-validate CLI (task 2.3)', () => {
       const bundle = buildValidBundle();
       delete bundle['narratives/poi-rynek.pl.md'];
       const { io, out, err } = makeIo();
-      const code = runCli(virtualFileSystem(bundle), { json: false, strict: false }, io);
+      const code = runCli(
+        virtualFileSystem(bundle),
+        { json: false, strict: false, release: false },
+        io,
+      );
       expect(code).toBe(1);
       // Default-mode errors go to stderr, not stdout.
       expect(out).toEqual([]);
@@ -216,7 +225,11 @@ describe('bundle-validate CLI (task 2.3)', () => {
       const bundle = buildValidBundle();
       delete bundle['narratives/poi-rynek.pl.md'];
       const { io, out, err } = makeIo();
-      const code = runCli(virtualFileSystem(bundle), { json: true, strict: false }, io);
+      const code = runCli(
+        virtualFileSystem(bundle),
+        { json: true, strict: false, release: false },
+        io,
+      );
       expect(code).toBe(1);
       expect(err).toEqual([]);
       expect(out).toHaveLength(1);

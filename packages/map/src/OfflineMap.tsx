@@ -56,15 +56,19 @@ export function OfflineMap({
   tourActive = true,
   onMapReady,
 }: OfflineMapProps): React.JSX.Element {
+  const { bundleId, version } = tilePack;
+
   // Resolve the offline tile source URL from the pack reference.
   const tileSource = useMemo(
-    () => resolveOfflineTileSource(docsDir, tilePack),
-    [docsDir, tilePack.bundleId, tilePack.version],
+    () => resolveOfflineTileSource(docsDir, { bundleId, version }),
+    [docsDir, bundleId, version],
   );
 
   // Build the MapLibre style JSON with the offline tile source.
   // When tourActive is true (default), this is the ONLY source —
   // no network fallback, no outbound requests (Req 3.2).
+  // When tourActive is false, we still use offline tiles but allow the
+  // style to include network-fetched glyphs/sprites in the future.
   const mapStyle = useMemo(() => {
     if (!tileSource.valid) {
       // Return a minimal empty style if the tile source is invalid.
@@ -104,7 +108,9 @@ export function OfflineMap({
         style={styles.map}
         styleJSON={JSON.stringify(mapStyle)}
         logoEnabled={false}
-        attributionEnabled={false}
+        // Attribution can make outbound requests for OSM links; disable
+        // during active tour to guarantee zero network traffic (Req 3.2).
+        attributionEnabled={!tourActive}
         // Disable telemetry — no outbound requests (Req 3.2)
         telemetryEnabled={false}
         onDidFinishLoadingMap={handleMapReady}
