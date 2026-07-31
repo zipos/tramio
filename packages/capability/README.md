@@ -21,16 +21,16 @@ Secure Enclave / StrongBox) can be enabled without reshaping the engine
 
 ## Flags
 
-| Flag                               | iOS floor | Android floor | Modern API                                                                          |
-| ---------------------------------- | --------- | ------------- | ----------------------------------------------------------------------------------- |
-| `regionMonitoringV2`               | iOS 17    | API 31        | CoreLocation `CLMonitor` / `GeofencingClient` v2                                    |
-| `liveActivities`                   | iOS 16    | —             | ActivityKit Live Activities                                                         |
-| `foregroundServicePartialWakelock` | —         | API 34        | `FOREGROUND_SERVICE_PARTIAL_WAKELOCK` FGS type                                      |
-| `isolatedAudioFocus`               | iOS 14    | API 31        | `AVAudioSession` isolated focus / `AudioFocusRequest` isolated-grant                |
-| `dynamicTypeXL`                    | iOS 13    | API 30        | Dynamic Type XL+ accessibility scales                                               |
-| `secureEnclaveAvailable`           | iOS 13    | —             | Secure Enclave-backed Keychain item                                                 |
-| `strongBoxAvailable`               | —         | API 29        | `PackageManager.FEATURE_STRONGBOX_KEYSTORE`                                         |
-| `aesNiAccel`                       | iOS 13    | API 21        | CPU AES hardware acceleration (informational)                                       |
+| Flag                               | iOS floor | Android floor | Modern API                                                           |
+| ---------------------------------- | --------- | ------------- | -------------------------------------------------------------------- |
+| `regionMonitoringV2`               | iOS 17    | API 31        | CoreLocation `CLMonitor` / `GeofencingClient` v2                     |
+| `liveActivities`                   | iOS 16    | —             | ActivityKit Live Activities                                          |
+| `foregroundServicePartialWakelock` | —         | API 34        | `FOREGROUND_SERVICE_PARTIAL_WAKELOCK` FGS type                       |
+| `isolatedAudioFocus`               | iOS 14    | API 31        | `AVAudioSession` isolated focus / `AudioFocusRequest` isolated-grant |
+| `dynamicTypeXL`                    | iOS 13    | API 30        | Dynamic Type XL+ accessibility scales                                |
+| `secureEnclaveAvailable`           | iOS 13    | —             | Secure Enclave-backed Keychain item                                  |
+| `strongBoxAvailable`               | —         | API 29        | `PackageManager.FEATURE_STRONGBOX_KEYSTORE`                          |
+| `aesNiAccel`                       | iOS 13    | API 21        | CPU AES hardware acceleration (informational)                        |
 
 Each flag's `documentedFallback` is mandatory and surfaced via
 `OS_MATRIX[flag].documentedFallback` so downstream code (and the property

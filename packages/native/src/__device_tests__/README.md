@@ -6,11 +6,11 @@ simulator/emulator with location simulation support).
 
 ## What they cover
 
-| Module           | iOS                                      | Android                                      |
-| ---------------- | ---------------------------------------- | -------------------------------------------- |
+| Module           | iOS                                      | Android                                              |
+| ---------------- | ---------------------------------------- | ---------------------------------------------------- |
 | Location_Service | Region monitoring, geofence wake, events | FusedLocation + GeofencingClient, foreground service |
-| Audio_Service    | AVAudioPlayer background audio, focus    | ExoPlayer background audio, AudioFocus       |
-| TTS_Engine       | AVSpeechSynthesizer speak/stop, fallback | android.speech.tts.TextToSpeech, fallback    |
+| Audio_Service    | AVAudioPlayer background audio, focus    | ExoPlayer background audio, AudioFocus               |
+| TTS_Engine       | AVSpeechSynthesizer speak/stop, fallback | android.speech.tts.TextToSpeech, fallback            |
 
 ## Running
 

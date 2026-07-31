@@ -10,3 +10,5 @@ yarn.lock
 pnpm-lock.yaml
 assets
 plugins
+tramio-overnight.json
+*.kiro-session.json

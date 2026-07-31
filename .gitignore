@@ -48,6 +48,10 @@ fixtures/dev/catalog-signing-key.json
 # test coverage (jest)
 coverage/
 
+# Kiro chat session saves (/chat save writes these into cwd)
+tramio-overnight.json
+*.kiro-session.json
+
 # logs
 *.log
 logs/

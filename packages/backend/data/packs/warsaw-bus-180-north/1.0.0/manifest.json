@@ -1,0 +1,30 @@
+{
+  "bundleId": "warsaw-bus-180-north",
+  "version": "1.0.0",
+  "city": {
+    "id": "warsaw",
+    "country": "PL"
+  },
+  "transitLine": {
+    "gtfsRouteId": "180",
+    "direction": "north (Wilanów → Żoliborz)",
+    "agency": "ZTM",
+    "mode": "bus"
+  },
+  "languages": ["pl", "en"],
+  "defaultLanguage": "pl",
+  "minAppVersion": "0.1.0",
+  "deadReckoning": {
+    "permitted": true,
+    "maxLeadSeconds": 30
+  },
+  "standbyTracks": [],
+  "attribution": [
+    {
+      "kind": "osm"
+    }
+  ],
+  "checksumAlgorithm": "sha256",
+  "validUntil": "2027-12-31",
+  "notes": "Northbound only — the southbound direction serves the opposite kerb, which inverts every left/right cue, so it ships as a separate bundle. Stop coordinates from OpenStreetMap relation 15885943; replace with ZTM GTFS shapes.txt for true road geometry."
+}

@@ -1,0 +1,412 @@
+{
+  "pois": [
+    {
+      "id": "poi-wilanow",
+      "category": "landmark",
+      "priority": 95,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.16782, 21.08406],
+        "radiusMeters": 140
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "standard",
+      "narratives": {
+        "pl": "narratives/poi-wilanow.pl.md",
+        "en": "narratives/poi-wilanow.en.md"
+      }
+    },
+    {
+      "id": "poi-sadyba",
+      "category": "landmark",
+      "priority": 60,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.18271, 21.06838],
+        "radiusMeters": 130
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "standard",
+      "narratives": {
+        "pl": "narratives/poi-sadyba.pl.md",
+        "en": "narratives/poi-sadyba.en.md"
+      }
+    },
+    {
+      "id": "poi-lazienki",
+      "category": "landmark",
+      "priority": 80,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.21443, 21.02649],
+        "radiusMeters": 120
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "standard",
+      "narratives": {
+        "pl": "narratives/poi-lazienki.pl.md",
+        "en": "narratives/poi-lazienki.en.md"
+      }
+    },
+    {
+      "id": "poi-plac-na-rozdrozu",
+      "category": "landmark",
+      "priority": 70,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.21968, 21.0252],
+        "radiusMeters": 110
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "standard",
+      "narratives": {
+        "pl": "narratives/poi-plac-na-rozdrozu.pl.md",
+        "en": "narratives/poi-plac-na-rozdrozu.en.md"
+      }
+    },
+    {
+      "id": "poi-piekna",
+      "category": "landmark",
+      "priority": 70,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.22316, 21.02426],
+        "radiusMeters": 110
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "standard",
+      "narratives": {
+        "pl": "narratives/poi-piekna.pl.md",
+        "en": "narratives/poi-piekna.en.md"
+      }
+    },
+    {
+      "id": "poi-trzech-krzyzy",
+      "category": "landmark",
+      "priority": 75,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.22879, 21.02283],
+        "radiusMeters": 110
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "standard",
+      "narratives": {
+        "pl": "narratives/poi-trzech-krzyzy.pl.md",
+        "en": "narratives/poi-trzech-krzyzy.en.md"
+      }
+    },
+    {
+      "id": "poi-foksal",
+      "category": "landmark",
+      "priority": 85,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.23301, 21.01961],
+        "radiusMeters": 110
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "standard",
+      "narratives": {
+        "pl": "narratives/poi-foksal.pl.md",
+        "en": "narratives/poi-foksal.en.md"
+      }
+    },
+    {
+      "id": "poi-ordynacka",
+      "category": "landmark",
+      "priority": 70,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.23573, 21.01833],
+        "radiusMeters": 110
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "standard",
+      "narratives": {
+        "pl": "narratives/poi-ordynacka.pl.md",
+        "en": "narratives/poi-ordynacka.en.md"
+      }
+    },
+    {
+      "id": "poi-uniwersytet",
+      "category": "landmark",
+      "priority": 80,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.23918, 21.01724],
+        "radiusMeters": 100
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "standard",
+      "narratives": {
+        "pl": "narratives/poi-uniwersytet.pl.md",
+        "en": "narratives/poi-uniwersytet.en.md"
+      }
+    },
+    {
+      "id": "poi-bristol",
+      "category": "landmark",
+      "priority": 85,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.24134, 21.01586],
+        "radiusMeters": 100
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "standard",
+      "narratives": {
+        "pl": "narratives/poi-bristol.pl.md",
+        "en": "narratives/poi-bristol.en.md"
+      }
+    },
+    {
+      "id": "poi-plac-zamkowy",
+      "category": "landmark",
+      "priority": 90,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.24472, 21.01406],
+        "radiusMeters": 110
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "standard",
+      "narratives": {
+        "pl": "narratives/poi-plac-zamkowy.pl.md",
+        "en": "narratives/poi-plac-zamkowy.en.md"
+      }
+    },
+    {
+      "id": "poi-kapitulna",
+      "category": "landmark",
+      "priority": 65,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.24741, 21.00918],
+        "radiusMeters": 110
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "standard",
+      "narratives": {
+        "pl": "narratives/poi-kapitulna.pl.md",
+        "en": "narratives/poi-kapitulna.en.md"
+      }
+    },
+    {
+      "id": "poi-krasinskich",
+      "category": "landmark",
+      "priority": 80,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.24901, 21.0055],
+        "radiusMeters": 80
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "standard",
+      "narratives": {
+        "pl": "narratives/poi-krasinskich.pl.md",
+        "en": "narratives/poi-krasinskich.en.md"
+      }
+    },
+    {
+      "id": "poi-swietojerska",
+      "category": "landmark",
+      "priority": 65,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.24988, 21.00318],
+        "radiusMeters": 80
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "standard",
+      "narratives": {
+        "pl": "narratives/poi-swietojerska.pl.md",
+        "en": "narratives/poi-swietojerska.en.md"
+      }
+    },
+    {
+      "id": "poi-muranow",
+      "category": "landmark",
+      "priority": 85,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.24923, 20.99818],
+        "radiusMeters": 110
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "memorial",
+      "narratives": {
+        "pl": "narratives/poi-muranow.pl.md",
+        "en": "narratives/poi-muranow.en.md"
+      }
+    },
+    {
+      "id": "poi-polin",
+      "category": "landmark",
+      "priority": 92,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.24883, 20.9946],
+        "radiusMeters": 110
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "memorial",
+      "narratives": {
+        "pl": "narratives/poi-polin.pl.md",
+        "en": "narratives/poi-polin.en.md"
+      }
+    },
+    {
+      "id": "poi-anielewicza",
+      "category": "landmark",
+      "priority": 88,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.24766, 20.98971],
+        "radiusMeters": 110
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "memorial",
+      "narratives": {
+        "pl": "narratives/poi-anielewicza.pl.md",
+        "en": "narratives/poi-anielewicza.en.md"
+      }
+    },
+    {
+      "id": "poi-smocza",
+      "category": "landmark",
+      "priority": 60,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.24641, 20.98571],
+        "radiusMeters": 110
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "standard",
+      "narratives": {
+        "pl": "narratives/poi-smocza.pl.md",
+        "en": "narratives/poi-smocza.en.md"
+      }
+    },
+    {
+      "id": "poi-esperanto",
+      "category": "landmark",
+      "priority": 70,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.2447, 20.97943],
+        "radiusMeters": 60
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "standard",
+      "narratives": {
+        "pl": "narratives/poi-esperanto.pl.md",
+        "en": "narratives/poi-esperanto.en.md"
+      }
+    },
+    {
+      "id": "poi-cmentarz-zydowski",
+      "category": "landmark",
+      "priority": 90,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.24475, 20.97744],
+        "radiusMeters": 60
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "memorial",
+      "narratives": {
+        "pl": "narratives/poi-cmentarz-zydowski.pl.md",
+        "en": "narratives/poi-cmentarz-zydowski.en.md"
+      }
+    },
+    {
+      "id": "poi-niska",
+      "category": "landmark",
+      "priority": 65,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.24907, 20.97961],
+        "radiusMeters": 110
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "memorial",
+      "narratives": {
+        "pl": "narratives/poi-niska.pl.md",
+        "en": "narratives/poi-niska.en.md"
+      }
+    },
+    {
+      "id": "poi-powazkowska",
+      "category": "landmark",
+      "priority": 65,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.25339, 20.97963],
+        "radiusMeters": 110
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "standard",
+      "narratives": {
+        "pl": "narratives/poi-powazkowska.pl.md",
+        "en": "narratives/poi-powazkowska.en.md"
+      }
+    },
+    {
+      "id": "poi-powazki-iv-brama",
+      "category": "landmark",
+      "priority": 88,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.25406, 20.9746],
+        "radiusMeters": 110
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "memorial",
+      "narratives": {
+        "pl": "narratives/poi-powazki-iv-brama.pl.md",
+        "en": "narratives/poi-powazki-iv-brama.en.md"
+      }
+    },
+    {
+      "id": "poi-pkp-powazki",
+      "category": "landmark",
+      "priority": 95,
+      "geometry": {
+        "kind": "circle",
+        "center": [52.25606, 20.96936],
+        "radiusMeters": 120
+      },
+      "dwellSec": 3,
+      "tier": "free",
+      "tone": "standard",
+      "narratives": {
+        "pl": "narratives/poi-pkp-powazki.pl.md",
+        "en": "narratives/poi-pkp-powazki.en.md"
+      }
+    }
+  ]
+}
