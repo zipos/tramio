@@ -32,6 +32,7 @@ The repository root is the Expo bare React Native app. Native projects (`ios/`,
 │   ├── engine/          Pure Tour_Engine reducer (state machine, geofence pipeline, priority, audio source)
 │   ├── map/             MapLibre GL Native offline-tile map component (OfflineMap)
 │   ├── native/          Custom turbo modules: Location, Audio, TTS (iOS + Android, NOT autolinked)
+│   ├── simulator/       Deterministic ride simulator & route-readiness reports (npm run simulate:180)
 │   ├── storage/         StorageManager, Offline_Pack downloader, LRU budget, GTFS parser
 │   └── ui/              Screens (route selection, tour playback) + wiring (TourRuntime, locationAdapter)
 └── .kiro/specs/urban-narrative-mvp/   Spec, design, tasks, requirements

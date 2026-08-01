@@ -20,6 +20,7 @@
     "test:ci": "jest --ci --runInBand",
     "test:coverage": "jest --ci --runInBand --coverage --selectProjects @tramio/engine",
     "validate:packs": "for d in packages/backend/data/packs/*/*/; do echo \"validating $d\"; node packages/authoring/bin/bundle-validate.js \"$d\" || exit 1; done",
+    "simulate:180": "ts-node --project tsconfig.test.json packages/simulator/src/cli.ts",
     "validate:packs:strict": "for d in packages/backend/data/packs/*/*/; do echo \"validating (strict) $d\"; node packages/authoring/bin/bundle-validate.js --strict \"$d\" || exit 1; done",
     "expo:check-config": "npx expo config --type public",
     "backend:dev": "node packages/backend/bin/serve.js",

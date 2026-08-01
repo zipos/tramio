@@ -43,6 +43,9 @@ jobs:
       - name: Expo config smoke check
         run: npm run expo:check-config
 
+      - name: Simulate Warsaw 180 (deterministic ride)
+        run: npm run simulate:180
+
       # --strict is the human-review release gate. It is expected to fail
       # until a reviewer approves all narrative frontmatter (poiId, language,
       # claims[], review block). Run as informational only — does NOT block CI.

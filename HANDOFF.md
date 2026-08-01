@@ -49,6 +49,16 @@ own `package.json`, `tsconfig.json`, and Jest config.
 - `packages/branding/` — Brand config (display name, domains, bundle IDs)
 - `packages/ui/` — Screens (route selection, tour playback) + wiring layer (TourRuntime, useTourEngine, locationAdapter)
 
+### Simulator (`packages/simulator/src/`)
+
+- `trace.ts` — Typed trace events (GpsFix, AppBackground/Foreground, UserCommand, fault injections)
+- `generators.ts` — Deterministic trace generators (clean ride, dwell, mid-route boarding, fast pass, traffic stop, fault injection)
+- `runner.ts` — Simulation runner: feeds traces through the REAL production `step()` + `reduce()` with deterministic timer/audio-completion modeling
+- `readiness.ts` — Route-readiness report: per-narrative word count, timing budgets, overlap warnings, memorial analysis
+- `warsaw180Config.ts` — Warsaw 180 configuration adapter (re-exports real route data for the simulator)
+- `cli.ts` — CLI entry point (`npm run simulate:180`) — fires all 24 POIs, produces timing report, asserts on failures
+- `simulator.test.ts` — 11 deterministic scenarios (35 assertions): clean ride, accuracy degradation, timestamp spikes, dropout, mid-route boarding, fast pass, traffic stop, focus loss/regain, lifecycle, TTS fault, second tour
+
 ### Tour_Engine (`packages/engine/src/`)
 
 - `types.ts` — LatLng, PositionUpdate, AcceptedUpdate, Geofence (with priority + authorIndex), Entitlement, LocationMode
@@ -279,11 +289,10 @@ without it, updates pause when the app backgrounds (limitation #1 above).
 ## Suggested Next Steps (highest value first)
 
 1. **Field-test bus 180 northbound end to end** — ride Wilanów → Żoliborz with
-   the screen locked and log which of the 24 POIs actually fire. This is the
-   **only** way to validate (a) the background-location path (limitation #1),
-   (b) the left/right side-of-street claims in `warsaw180.ts`, and (c) whether
-   the geofence radii are well-sized for real GPS noise on a moving bus. **No
-   one has ridden the 180 with this build yet** — these are unverified.
+   the screen locked and log which of the 24 POIs actually fire. The simulator
+   (`npm run simulate:180`) confirms all 24 fire in the deterministic model;
+   the field test validates GPS noise, background location, and side-of-street.
+   **No one has ridden the 180 with this build yet** — these are unverified.
 2. **Enable `directionFilter`** on the 180 bundle — the filter is implemented
    in the geofence pipeline (Stage 5, `pipeline.ts`), but left unset on the
    authored geofences because an untested filter would silently suppress every

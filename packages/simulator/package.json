@@ -1,0 +1,13 @@
+{
+  "name": "@tramio/simulator",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Deterministic ride simulator: feeds real GPS traces through the production geofence pipeline and Tour_Engine reducer for offline route testing and authoring-readiness reports.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "simulate:180": "ts-node --project ../../tsconfig.test.json src/cli.ts"
+  }
+}

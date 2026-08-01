@@ -59,6 +59,7 @@ module.exports = {
     packageProject('packages/authoring'),
     packageProject('packages/branding'),
     packageProject('packages/crypto-service'),
+    packageProject('packages/simulator'),
     packageProject('packages/native'),
 
     // Packages that need react-native / maplibre mocks
