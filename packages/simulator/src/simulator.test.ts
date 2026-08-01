@@ -582,3 +582,112 @@ describe('Determinism', () => {
     expect(t1).toEqual(t2);
   });
 });
+
+// ─── Scenario 12: Mixed audio source (Wave 3) ──────────────────────────────
+
+describe('Scenario 12: Mixed audio source (Wave 3)', () => {
+  it('handles pre-rendered audio completion (source:audio commands modeled)', () => {
+    const poiCenters = warsaw180PoiCenters().slice(0, 3);
+    const trace = generateDwellTrace(poiCenters, 4000, {
+      speedMps: 8,
+      fixIntervalMs: 1000,
+      accuracyM: 10,
+    });
+
+    // Use a config with mediaCatalog so the reducer emits source:'audio'.
+    const baseConfig = warsaw180RunnerConfig('pl');
+    const mediaCatalog = {
+      defaultLanguage: 'pl',
+      pois: Object.fromEntries(
+        WARSAW_180_NORTH_POIS.map((p) => [
+          p.poiId,
+          {
+            narratives: { pl: `${p.poiId}:pl`, en: `${p.poiId}:en` },
+            audio: { pl: `/packs/audio/${p.poiId}.pl.m4a` },
+          },
+        ]),
+      ),
+    };
+    const config = {
+      ...baseConfig,
+      tourConfig: { ...baseConfig.tourConfig, mediaCatalog },
+    };
+
+    const report = runSimulation(trace, config);
+
+    // All 3 POIs should fire and complete.
+    expect(report.firedPois.length).toBe(3);
+    expect(report.consumedPois.length).toBe(3);
+    expect(report.stuckPlaying).toBe(false);
+
+    // PlaySegment commands should carry source:'audio'.
+    const playCommands = report.commandsEmitted.filter((c) => c.kind === 'PlaySegment');
+    expect(playCommands.length).toBe(3);
+    for (const cmd of playCommands) {
+      if (cmd.kind === 'PlaySegment') {
+        expect(cmd.source).toBe('audio');
+      }
+    }
+  });
+
+  it('handles TTS-only scenario (no mediaCatalog)', () => {
+    const poiCenters = warsaw180PoiCenters().slice(0, 3);
+    const trace = generateDwellTrace(poiCenters, 4000, {
+      speedMps: 8,
+      fixIntervalMs: 1000,
+      accuracyM: 10,
+    });
+
+    const config = warsaw180RunnerConfig('pl');
+    const report = runSimulation(trace, config);
+
+    expect(report.firedPois.length).toBe(3);
+    expect(report.stuckPlaying).toBe(false);
+
+    // Without mediaCatalog, all should be source:'tts'.
+    const playCommands = report.commandsEmitted.filter((c) => c.kind === 'PlaySegment');
+    for (const cmd of playCommands) {
+      if (cmd.kind === 'PlaySegment') {
+        expect(cmd.source).toBe('tts');
+      }
+    }
+  });
+
+  it('handles unavailable POI (no content) without stranding', () => {
+    const poiCenters = warsaw180PoiCenters().slice(0, 3);
+    const trace = generateDwellTrace(poiCenters, 4000, {
+      speedMps: 8,
+      fixIntervalMs: 1000,
+      accuracyM: 10,
+    });
+
+    const baseConfig = warsaw180RunnerConfig('pl');
+    // Make first POI unavailable (empty catalog entry).
+    const firstPoiId = WARSAW_180_NORTH_POIS[0]!.poiId;
+    const mediaCatalog = {
+      defaultLanguage: 'pl',
+      pois: Object.fromEntries(
+        WARSAW_180_NORTH_POIS.map((p) => [
+          p.poiId,
+          p.poiId === firstPoiId
+            ? { narratives: {}, audio: {} } // Unavailable!
+            : { narratives: { pl: `${p.poiId}:pl` }, audio: {} },
+        ]),
+      ),
+    };
+    const config = {
+      ...baseConfig,
+      tourConfig: { ...baseConfig.tourConfig, mediaCatalog },
+    };
+
+    const report = runSimulation(trace, config);
+
+    // All 3 dwell events were processed. First POI is skipped (unavailable),
+    // 2 POIs fire normally.
+    expect(report.firedPois.length).toBe(3); // Pipeline fires all 3
+    // But only 2 play commands (first was skipped by reducer).
+    const playCommands = report.commandsEmitted.filter((c) => c.kind === 'PlaySegment');
+    expect(playCommands.length).toBe(2);
+    expect(report.stuckPlaying).toBe(false);
+  });
+});

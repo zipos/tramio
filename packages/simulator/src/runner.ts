@@ -267,6 +267,15 @@ export function runSimulation(
           cancelTimer(cmd.id);
           break;
         case 'PlaySegment': {
+          if (cmd.source === 'audio') {
+            // Pre-rendered audio: model as a fixed 15s playback.
+            // In reality this comes from the file duration, but the simulator
+            // uses a deterministic approximation.
+            const AUDIO_PLAYBACK_MS = 15_000;
+            scheduleAudioCompletion(cmd.segmentId, AUDIO_PLAYBACK_MS, now);
+            break;
+          }
+          // TTS source path.
           if (!ttsAvailable) {
             warnings.push(
               `TTS unavailable when PlaySegment(${cmd.segmentId}) requested at ${now}ms`,
@@ -646,7 +655,7 @@ function getPlayingSegmentId(state: TourState): string | null {
 function formatCommand(cmd: EngineCommand): string {
   switch (cmd.kind) {
     case 'PlaySegment':
-      return `PlaySegment(${cmd.segmentId}, ${cmd.source})`;
+      return `PlaySegment(${cmd.segmentId}, ${cmd.source}, lang=${cmd.language})`;
     case 'StopAudio':
       return 'StopAudio';
     case 'PauseAudio':

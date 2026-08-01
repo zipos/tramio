@@ -23,6 +23,7 @@ import type {
   DeviationState,
   EndedState,
   IdleState,
+  MediaCatalog,
   PlayingSegment,
   StandbyState,
   TourSession,
@@ -30,6 +31,7 @@ import type {
 } from './state';
 import type { AcceptedUpdate, Entitlement, Geofence } from './types';
 import { resolveOverlappingTriggers } from './priority';
+import { selectAudioSource } from './audioSource';
 
 // ─── Result type ────────────────────────────────────────────────────────────
 
@@ -59,6 +61,13 @@ export interface StartTourConfig {
    * `evaluateGtfsAgePolicy(feed).drDisabled` at tour start.
    */
   drDisabled?: boolean;
+  /**
+   * Per-POI media availability catalog. When present, the reducer uses
+   * selectAudioSource() to resolve the best source on GeofenceDwell.
+   * When absent (embedded/demo tours without a pack), the reducer emits
+   * TTS with the conventional `{poiId}:{lang}` segmentId.
+   */
+  mediaCatalog?: MediaCatalog;
 }
 
 // ─── Initial state ──────────────────────────────────────────────────────────
@@ -118,6 +127,7 @@ function reduceIdle(
       deviationPending: false,
       currentLanguage: config.language,
       drDisabled: config.drDisabled ?? false,
+      ...(config.mediaCatalog !== undefined ? { mediaCatalog: config.mediaCatalog } : {}),
     };
     const active: ActiveState = { phase: 'Active', session };
     return {
@@ -475,16 +485,57 @@ function handleGeofenceDwell(state: ActiveState, poiId: string, now: number): Re
   }
 
   // Fire the winning POI: set playing, emit PlaySegment command.
-  // Note: audio source selection (pre-rendered vs TTS) and entitlement
-  // filtering are implemented in later tasks (3.16, 3.20). For now we
-  // emit a basic PlaySegment with TTS source.
-  const segmentId = `${winnerPoiId}:${session.currentLanguage}`;
+  // Audio source selection: when mediaCatalog is present, resolve via
+  // selectAudioSource() fallback chain. When absent (embedded/demo),
+  // emit TTS with conventional segmentId for backward compatibility.
+  const catalog = session.mediaCatalog;
+  let segmentId: string;
+  let playCmd: EngineCommand;
+
+  if (catalog) {
+    const poiEntry = catalog.pois[winnerPoiId];
+    const audioResult = selectAudioSource(
+      winnerPoiId,
+      session.currentLanguage,
+      catalog.defaultLanguage,
+      poiEntry?.narratives ?? {},
+      poiEntry?.audio,
+    );
+
+    if (audioResult.source === 'unavailable') {
+      // No content exists for this POI — skip it (add to consumed so it
+      // doesn't strand the engine in a loop).
+      consumed.add(winnerPoiId);
+      const nextSession: TourSession = { ...session, consumed };
+      return { state: { phase: 'Active', session: nextSession }, commands: [] };
+    }
+
+    segmentId = `${winnerPoiId}:${audioResult.language}`;
+    playCmd = {
+      kind: 'PlaySegment',
+      segmentId,
+      source: audioResult.source,
+      language: audioResult.language,
+      assetPath: audioResult.assetPath,
+    };
+  } else {
+    // Legacy/demo path: no catalog, emit TTS with conventional id.
+    segmentId = `${winnerPoiId}:${session.currentLanguage}`;
+    playCmd = {
+      kind: 'PlaySegment',
+      segmentId,
+      source: 'tts',
+      language: session.currentLanguage,
+      assetPath: segmentId,
+    };
+  }
+
   const playing: PlayingSegment = { segmentId, poiId: winnerPoiId, startedAtMs: now };
   const nextSession: TourSession = { ...session, playing, consumed };
 
   return {
     state: { phase: 'Active', session: nextSession },
-    commands: [{ kind: 'PlaySegment', segmentId, source: 'tts' }],
+    commands: [playCmd],
   };
 }
 
@@ -547,12 +598,50 @@ function handleGeofenceDwellFromStandby(
     consumed.add(skipped);
   }
 
-  // Fire the winning POI
-  const segmentId = `${winnerPoiId}:${session.currentLanguage}`;
+  // Fire the winning POI — same audio source selection as handleGeofenceDwell.
+  const catalog = session.mediaCatalog;
+  let segmentId: string;
+  let playCmd: EngineCommand;
+
+  if (catalog) {
+    const poiEntry = catalog.pois[winnerPoiId];
+    const audioResult = selectAudioSource(
+      winnerPoiId,
+      session.currentLanguage,
+      catalog.defaultLanguage,
+      poiEntry?.narratives ?? {},
+      poiEntry?.audio,
+    );
+
+    if (audioResult.source === 'unavailable') {
+      consumed.add(winnerPoiId);
+      const nextSession: TourSession = { ...session, consumed };
+      return { state: { phase: 'Active', session: nextSession }, commands };
+    }
+
+    segmentId = `${winnerPoiId}:${audioResult.language}`;
+    playCmd = {
+      kind: 'PlaySegment',
+      segmentId,
+      source: audioResult.source,
+      language: audioResult.language,
+      assetPath: audioResult.assetPath,
+    };
+  } else {
+    segmentId = `${winnerPoiId}:${session.currentLanguage}`;
+    playCmd = {
+      kind: 'PlaySegment',
+      segmentId,
+      source: 'tts',
+      language: session.currentLanguage,
+      assetPath: segmentId,
+    };
+  }
+
   const playing: PlayingSegment = { segmentId, poiId: winnerPoiId, startedAtMs: now };
   const nextSession: TourSession = { ...session, playing, consumed };
 
-  commands.push({ kind: 'PlaySegment', segmentId, source: 'tts' });
+  commands.push(playCmd);
 
   return {
     state: { phase: 'Active', session: nextSession },

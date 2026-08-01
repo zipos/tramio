@@ -133,22 +133,23 @@ location, speech, keep-awake, and background tasks. Custom turbo modules under
 cherry-picked per-platform plumbing when Expo is not production-ready for a
 specific requirement.
 
-| Concern       | Module (shipping)                     | Wiring file                                              |
-| ------------- | ------------------------------------- | -------------------------------------------------------- |
-| Location      | `expo-location` + `expo-task-manager` | `locationAdapter.ts`, `backgroundLocationTask.ts`        |
-| TTS           | `expo-speech`                         | `TourRuntime.ts`                                         |
-| Keep-awake    | `expo-keep-awake`                     | `TourRuntime.ts`                                         |
-| Storage       | `expo-sqlite` + `expo-file-system`    | `openDeviceStorage()`, `usePackManager`, `loadPackTour`  |
-| Map (offline) | `@maplibre/maplibre-react-native`     | `OfflineMap` on `TourPlaybackScreen` when pack installed |
+| Concern        | Module (shipping)                     | Wiring file                                              |
+| -------------- | ------------------------------------- | -------------------------------------------------------- |
+| Location       | `expo-location` + `expo-task-manager` | `locationAdapter.ts`, `backgroundLocationTask.ts`        |
+| TTS            | `expo-speech`                         | `TourRuntime.ts`                                         |
+| Audio playback | `expo-audio` (SDK 57)                 | `ExpoAudioPlaybackAdapter.ts`, `TourRuntime.ts`          |
+| Keep-awake     | `expo-keep-awake`                     | `TourRuntime.ts`                                         |
+| Storage        | `expo-sqlite` + `expo-file-system`    | `openDeviceStorage()`, `usePackManager`, `loadPackTour`  |
+| Map (offline)  | `@maplibre/maplibre-react-native`     | `OfflineMap` on `TourPlaybackScreen` when pack installed |
 
 ### Native cherry-pick candidates (not wired unless needed)
 
-| Gap                                     | Likely native owner                           | Trigger to implement                                      |
-| --------------------------------------- | --------------------------------------------- | --------------------------------------------------------- |
-| Pre-rendered audio + LUFS normalization | `packages/native/` Audio_Service or `expo-av` | Hero POIs with studio audio                               |
-| Audio focus pause/resume with offset    | Audio_Service                                 | Phone calls interrupting narration                        |
-| OS geofence battery modes               | Location_Service                              | Background reliability still insufficient after Expo path |
-| Encrypted pack decryption               | Crypto_Service                                | Req 21–22 content protection ships                        |
+| Gap                                      | Likely native owner               | Trigger to implement                                      |
+| ---------------------------------------- | --------------------------------- | --------------------------------------------------------- |
+| LUFS normalization of pre-rendered audio | `packages/native/` Audio_Service  | Per-segment loudness matching in production audio         |
+| Audio focus pause/resume with offset     | ✅ Resolved (Wave 3 — expo-audio) | —                                                         |
+| OS geofence battery modes                | Location_Service                  | Background reliability still insufficient after Expo path |
+| Encrypted pack decryption                | Crypto_Service                    | Req 21–22 content protection ships                        |
 
 The custom turbo modules are **NOT autolinked** — do not import their TS
 facades from app code (`TurboModuleRegistry.getEnforcing()` throws at load).
@@ -312,9 +313,13 @@ without it, updates pause when the app backgrounds (limitation #1 above).
    shows a GPS dot + route + POI markers.
 7. **OSM attribution overlay** — a persistent overlay component on every
    MapLibre view (task 10.2); currently missing.
-8. **Pre-rendered audio** — the engine's `selectAudioSource()` fallback chain
-   already prefers pack audio over TTS. Render each segment with a cloud
-   voice, normalise to ~−16 LUFS mono, ship as AAC/Opus.
+8. **Pre-rendered audio** — ✅ **Done (Wave 3).** The engine's `selectAudioSource()` fallback chain
+   is now wired end-to-end: pack loader verifies audio files against the signed lock,
+   builds a `MediaCatalog`, and the reducer dispatches `PlaySegment` with `source: 'audio'`
+   and the verified `assetPath`. `TourRuntime` plays local files through an injectable
+   `AudioPlaybackPort` (production: `ExpoAudioPlaybackAdapter` using expo-audio SDK 57).
+   TTS remains the fallback. Render each segment with a cloud voice, normalise to ~−16 LUFS
+   mono, ship as AAC/Opus in the bundle.
 9. **High-accuracy indicator** — `TourPlaybackScreen` does not yet show when
    the location mode is `tour-approach` or `reconcile`.
 10. **Deviation prompt UI** — engine hooks exist; classification is not yet

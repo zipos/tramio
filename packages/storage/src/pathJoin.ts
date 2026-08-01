@@ -23,12 +23,24 @@ export function assertSafePackRelativePath(relPath: string): void {
 }
 
 export function pathJoin(...segments: string[]): string {
+  const firstNonEmpty = segments.find((segment) => segment.length > 0) ?? '';
+  const schemeMatch = /^([a-z][a-z0-9+.-]*:\/\/)/iu.exec(firstNonEmpty);
+  const scheme = schemeMatch?.[1] ?? '';
+  let removedScheme = false;
+
   const parts = segments
     .filter((s) => s.length > 0)
-    .map((s, i) => (i === 0 ? s.replace(/\/+$/, '') : s.replace(/^\/+|\/+$/g, '')))
+    .map((s, i) => {
+      let value = s;
+      if (!removedScheme && scheme.length > 0 && value.startsWith(scheme)) {
+        value = value.slice(scheme.length);
+        removedScheme = true;
+      }
+      return i === 0 ? value.replace(/\/+$/, '') : value.replace(/^\/+|\/+$/g, '');
+    })
     .filter((s) => s.length > 0);
-  if (parts.length === 0) return '';
-  return parts.join('/').replace(/\/+/g, '/');
+  if (parts.length === 0) return scheme;
+  return `${scheme}${parts.join('/').replace(/\/+/g, '/')}`;
 }
 
 export function pathDirname(filePath: string): string {

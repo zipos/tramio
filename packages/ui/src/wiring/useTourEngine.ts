@@ -10,6 +10,7 @@ import type { TourState } from '../../../engine/src';
 import { INITIAL_STATE } from '../../../engine/src';
 import type { StartTourConfig } from '../../../engine/src';
 import { TourRuntime, type BackgroundStatus, type SpeechStatus } from './TourRuntime';
+import { ExpoAudioPlaybackAdapter } from './ExpoAudioPlaybackAdapter';
 import {
   resolveNarrativeCaption,
   sampleNarrativeResolver,
@@ -74,6 +75,7 @@ export function useTourEngine(): UseTourEngineResult {
     runtimeRef.current = new TourRuntime({
       narrativeResolver: sampleNarrativeResolver,
       segmentStyleResolver: sampleSegmentStyle,
+      audioPort: new ExpoAudioPlaybackAdapter(),
     });
   }
 

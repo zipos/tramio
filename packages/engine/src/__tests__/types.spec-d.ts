@@ -110,9 +110,17 @@ const _commands: ReadonlyArray<EngineCommand> = [
     kind: 'PlaySegment',
     segmentId: 'seg-poi-rynek-pl',
     source: 'audio',
+    language: 'pl',
+    assetPath: '/packs/wroclaw-tram-7-east/1.4.2/audio/poi-rynek.pl.m4a',
     preroll: { kind: 'disclosure', text: 'Sponsored by Cafe Zamek.' },
   },
-  { kind: 'PlaySegment', segmentId: 'seg-poi-rynek-pl', source: 'tts' },
+  {
+    kind: 'PlaySegment',
+    segmentId: 'seg-poi-rynek-pl',
+    source: 'tts',
+    language: 'pl',
+    assetPath: 'seg-poi-rynek-pl',
+  },
   {
     kind: 'RequestDecryptedSegment',
     segmentId: 'seg-poi-rynek-pl',

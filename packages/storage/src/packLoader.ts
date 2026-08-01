@@ -7,6 +7,7 @@
 
 import type { StartTourConfig } from '../../engine/src';
 import type { Geofence } from '../../engine/src';
+import type { MediaCatalog, PoiMediaEntry } from '../../engine/src';
 
 import type { PackRef } from './paths';
 import type { StorageManager } from './manager';
@@ -29,6 +30,8 @@ interface AuthoredPoi {
   dwellSec: number;
   authorIndex?: number;
   narratives?: Readonly<Record<string, string>>;
+  /** Pre-rendered audio files keyed by language (ISO 639-1). */
+  audio?: Readonly<Record<string, string>>;
   tone?: 'standard' | 'memorial';
 }
 
@@ -47,6 +50,12 @@ export interface LoadedPackTour {
   narratives: Readonly<Record<string, string>>;
   /** Delivery tone per POI id (not segment id). Absent keys default to 'standard'. */
   tones: Readonly<Record<string, 'standard' | 'memorial'>>;
+  /**
+   * Per-POI media availability catalog with verified audio asset paths.
+   * Passed to the engine's StartTourConfig so selectAudioSource() can
+   * resolve pre-rendered audio vs TTS at trigger time.
+   */
+  mediaCatalog: MediaCatalog;
 }
 
 interface AuthoredManifest {
@@ -245,6 +254,70 @@ export async function loadPackTour(
     tones[poi.id] = poi.tone === 'memorial' ? 'memorial' : 'standard';
   }
 
+  // Step 6: Verify pre-rendered audio assets — fail closed.
+  // For each POI with an `audio` map, every declared audio entry MUST be
+  // safe, listed in the lock, present on disk, and pass SHA-256/size
+  // verification. A failed or missing declared audio path is an integrity
+  // violation (same as narrative) — it throws PackIntegrityError immediately.
+  // This prevents silent degradation: if a publisher signs a bundle with
+  // audio paths, ALL of them must be intact or the pack is treated as corrupt.
+  const verifiedAudio: Record<string, Record<string, string>> = {};
+  for (const poi of poisFile.pois) {
+    if (!poi.audio) continue;
+    const poiAudio: Record<string, string> = {};
+    for (const audioLang of Object.keys(poi.audio)) {
+      const relPath = poi.audio[audioLang];
+      if (!relPath) continue;
+
+      // Unsafe paths are integrity failures — no silent skip.
+      try {
+        assertSafePackRelativePath(relPath);
+      } catch {
+        throw new PackIntegrityError('asset-missing', relPath, 'unsafe relative path');
+      }
+
+      // Must be listed in the lock.
+      const lockEntry = findLockAsset(lockAssets, relPath);
+      if (!lockEntry) {
+        throw new PackIntegrityError('asset-not-listed', relPath);
+      }
+
+      // Verify SHA-256 + size. Throws PackIntegrityError on mismatch/missing.
+      // eslint-disable-next-line no-await-in-loop
+      await verifyAsset(storage, root, lockEntry);
+
+      // Verified — expose as absolute path for the player.
+      poiAudio[audioLang] = pathJoin(root, relPath);
+    }
+    if (Object.keys(poiAudio).length > 0) {
+      verifiedAudio[poi.id] = poiAudio;
+    }
+  }
+
+  // Build the media catalog for the engine.
+  const mediaCatalogPois: Record<string, PoiMediaEntry> = {};
+  for (const poi of poisFile.pois) {
+    const narrativeMap: Record<string, string> = {};
+    if (poi.narratives) {
+      for (const narrativeLang of allLanguages) {
+        const relPath = poi.narratives[narrativeLang];
+        if (relPath && narratives[`${poi.id}:${narrativeLang}`]) {
+          // Use the segmentId as the narrative locator (resolver key).
+          narrativeMap[narrativeLang] = `${poi.id}:${narrativeLang}`;
+        }
+      }
+    }
+    mediaCatalogPois[poi.id] = {
+      narratives: narrativeMap,
+      audio: verifiedAudio[poi.id] ?? {},
+    };
+  }
+
+  const mediaCatalog: MediaCatalog = {
+    defaultLanguage: manifest.defaultLanguage,
+    pois: mediaCatalogPois,
+  };
+
   const vehicleLabel =
     manifest.transitLine?.mode === 'bus'
       ? 'Bus'
@@ -264,11 +337,13 @@ export async function loadPackTour(
     defaultLanguage: manifest.defaultLanguage,
     narratives,
     tones,
+    mediaCatalog,
     config: {
       bundle: { bundleId: ref.bundleId, bundleVersion: ref.version },
       geofences,
       route: route.polyline.map(([lat, lng]) => [lat, lng] as [number, number]),
       language: lang,
+      mediaCatalog,
     },
   };
 }

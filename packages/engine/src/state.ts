@@ -20,6 +20,32 @@
 import type { AcceptedUpdate, Entitlement, Geofence } from './types';
 
 /**
+ * Per-POI media availability catalog carried in the tour session.
+ * Describes which languages have narrative text and/or pre-rendered audio
+ * for each POI. The engine uses this to resolve the audio source on
+ * GeofenceDwell without embedding narrative bodies in reducer state.
+ *
+ * Keys are POI ids. For each POI, `narratives` maps lang → narrative locator
+ * (opaque path/id used by TTS resolver), and `audio` maps lang → verified
+ * asset path. Both maps may be empty or absent for a given POI.
+ *
+ * When `undefined` on the session (embedded/demo tours without a pack),
+ * the reducer falls back to emitting TTS with the conventional segmentId
+ * `{poiId}:{lang}` — backward-compatible with pre-Wave-3 behavior.
+ */
+export interface MediaCatalog {
+  readonly defaultLanguage: string;
+  readonly pois: Readonly<Record<string, PoiMediaEntry>>;
+}
+
+export interface PoiMediaEntry {
+  /** Maps lang → narrative locator (for TTS text resolution). */
+  readonly narratives: Readonly<Record<string, string>>;
+  /** Maps lang → verified local asset path (for pre-rendered playback). */
+  readonly audio: Readonly<Record<string, string>>;
+}
+
+/**
  * Identifier of the bundle currently driving the tour. The engine never
  * reads from disk; this is just the handle the reducer carries so that
  * `RequestDecryptedSegment` commands can be addressed correctly.
@@ -96,6 +122,16 @@ export interface TourSession {
    * @see evaluateGtfsAgePolicy in @tramio/storage/gtfs
    */
   drDisabled: boolean;
+  /**
+   * Per-POI media availability catalog. When present, the reducer uses
+   * `selectAudioSource()` to resolve the best source on GeofenceDwell.
+   * When absent (embedded/demo tours), the reducer emits TTS with the
+   * conventional `{poiId}:{lang}` segmentId — backward-compatible.
+   *
+   * @see MediaCatalog
+   * @see selectAudioSource in ./audioSource.ts
+   */
+  mediaCatalog?: MediaCatalog;
   /**
    * Wall-clock ms at which audio focus was lost. Used to determine whether
    * to resume or discard the playing segment on FocusRegain. Cleared on

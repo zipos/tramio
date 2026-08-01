@@ -31,6 +31,7 @@ import { INITIAL_STATE, reduce } from '../../../engine/src';
 import { LocationAdapter } from './locationAdapter';
 import { DEFAULT_PLAYBACK_SPEED, type PlaybackSpeed } from './playbackSpeed';
 import { configureTourAudioSession, releaseTourAudioSession } from './audioSession';
+import type { AudioPlaybackPort, AudioPlaybackCallbacks } from './AudioPlaybackPort';
 
 export type StateListener = (state: TourState) => void;
 
@@ -63,6 +64,11 @@ export interface TourRuntimeOptions {
   segmentStyleResolver?: SegmentStyleResolver;
   /** Speech language override; defaults to the tour config language. */
   speechLanguage?: string;
+  /**
+   * Injectable audio playback port for pre-rendered audio files.
+   * When absent, pre-rendered audio commands trigger a TTS fallback.
+   */
+  audioPort?: AudioPlaybackPort;
 }
 
 /** Background status exposed to the UI for a "no background" warning. */
@@ -131,6 +137,29 @@ export class TourRuntime {
   private lastSpokenText: string | null = null;
   private lastSpokenLanguage = 'en';
   private lastSpokenRate = 1.0;
+  /**
+   * The source type of the last/current playback. 'audio' = pre-rendered,
+   * 'tts' = device speech. Used for replay dispatch and UI exposure.
+   */
+  private lastSource: 'audio' | 'tts' = 'tts';
+  private lastAudioAssetPath: string | null = null;
+  /**
+   * The actual language used for the current/last playback. May differ from
+   * config.language when the audio source selection chain falls back to the
+   * default language or another available language.
+   */
+  private lastPlaybackLanguage = 'en';
+
+  /** Injectable audio port for pre-rendered file playback. */
+  private audioPort: AudioPlaybackPort | null = null;
+  /** Whether the currently-active playback source is pre-rendered audio. */
+  private activeSourceIsAudio = false;
+  /**
+   * Monotonically increasing generation counter for audio port callbacks.
+   * Incremented on every new play/stop/replay so that stale callbacks from
+   * a previous play session are suppressed even when the segmentId matches.
+   */
+  private audioPlayGeneration = 0;
 
   private backgroundStatus: BackgroundStatus = { mode: 'foreground-only', reason: 'unavailable' };
   private backgroundStatusListeners = new Set<BackgroundStatusListener>();
@@ -147,6 +176,7 @@ export class TourRuntime {
   constructor(opts?: TourRuntimeOptions) {
     this.narrativeResolver = opts?.narrativeResolver ?? (() => null);
     this.segmentStyleResolver = opts?.segmentStyleResolver ?? (() => null);
+    this.audioPort = opts?.audioPort ?? null;
   }
 
   // ─── Public API ─────────────────────────────────────────────────────
@@ -287,7 +317,7 @@ export class TourRuntime {
    * (playing cleared) is a pure-UI, callback-free replay safe.
    */
   replayLastSegment(): void {
-    if (this.lastSpokenText === null) return;
+    if (this.lastSpokenText === null && this.lastAudioAssetPath === null) return;
 
     const playing = this.getPlayingSegment();
     const engineSegmentId = playing ? playing.segmentId : null;
@@ -296,16 +326,55 @@ export class TourRuntime {
       this.currentSegmentId = engineSegmentId;
     }
 
-    // Stop any in-flight speech first, deliberately.
-    this.deliberateStop = true;
-    void Speech.stop().catch(() => undefined);
+    // Stop any in-flight playback first, deliberately.
+    this.stopAllPlayback();
 
-    this.speakWithWatchdog(
-      this.lastSpokenText,
-      this.lastSpokenLanguage,
-      this.lastSpokenRate,
-      engineSegmentId,
-    );
+    if (this.lastSource === 'audio' && this.audioPort && this.lastAudioAssetPath) {
+      // Replay pre-rendered audio.
+      this.activeSourceIsAudio = true;
+      const assetPath = this.lastAudioAssetPath;
+      const gen = this.audioPlayGeneration;
+      const callbacks: AudioPlaybackCallbacks = {
+        onComplete: () => {
+          if (this.audioPlayGeneration !== gen) return;
+          if (engineSegmentId === null) return;
+          if (this.currentSegmentId !== engineSegmentId) return;
+          this.currentSegmentId = null;
+          this.activeSourceIsAudio = false;
+          this.dispatch({ kind: 'AudioFinished', segmentId: engineSegmentId });
+        },
+        onError: () => {
+          if (this.audioPlayGeneration !== gen) return;
+          // Release the failed player before starting a second source.
+          this.audioPort!.stop();
+          this.activeSourceIsAudio = false;
+          // On replay error, fall back to TTS replay if possible.
+          if (this.lastSpokenText) {
+            this.lastSource = 'tts';
+            this.speakWithWatchdog(
+              this.lastSpokenText,
+              this.lastSpokenLanguage,
+              this.lastSpokenRate,
+              engineSegmentId,
+            );
+          } else if (engineSegmentId !== null) {
+            if (this.currentSegmentId !== engineSegmentId) return;
+            this.currentSegmentId = null;
+            this.dispatch({ kind: 'AudioFinished', segmentId: engineSegmentId });
+          }
+        },
+      };
+      this.audioPort.play(assetPath, callbacks);
+    } else if (this.lastSpokenText !== null) {
+      // Replay via TTS.
+      this.activeSourceIsAudio = false;
+      this.speakWithWatchdog(
+        this.lastSpokenText,
+        this.lastSpokenLanguage,
+        this.lastSpokenRate,
+        engineSegmentId,
+      );
+    }
   }
 
   dispatch(event: EngineEvent): void {
@@ -321,9 +390,11 @@ export class TourRuntime {
     this.clearSpeechWatchdogs();
     this.locationAdapter?.stop();
     this.locationAdapter = null;
-    // Deliberate stop on destroy.
-    this.deliberateStop = true;
-    void Speech.stop().catch(() => undefined);
+    // Stop all playback and release audio port.
+    this.stopAllPlayback();
+    if (this.audioPort) {
+      this.audioPort.release();
+    }
     deactivateKeepAwake('tramio-tour').catch(() => undefined);
     void releaseTourAudioSession().catch(() => undefined);
     this.cancelAllTimers();
@@ -341,12 +412,11 @@ export class TourRuntime {
   private executeCommand(cmd: EngineCommand): void {
     switch (cmd.kind) {
       case 'PlaySegment':
-        this.handlePlaySegment(cmd.segmentId);
+        this.handlePlaySegment(cmd);
         break;
       case 'StopAudio':
         // Deliberate stop — do not treat the resulting onStopped as a focus loss.
-        this.deliberateStop = true;
-        void Speech.stop().catch(() => undefined);
+        this.stopAllPlayback();
         break;
       case 'PauseAudio':
         // Guard: if we're already in a PauseAudio handler (from a FocusLoss
@@ -354,14 +424,19 @@ export class TourRuntime {
         // don't call Speech.stop again — it would create a recursive loop.
         if (!this.isPausingAudio) {
           this.isPausingAudio = true;
-          this.deliberateStop = true;
-          void Speech.stop().catch(() => undefined);
+          if (this.activeSourceIsAudio && this.audioPort) {
+            this.audioPort.pause();
+          } else {
+            this.deliberateStop = true;
+            void Speech.stop().catch(() => undefined);
+          }
           this.isPausingAudio = false;
         }
         break;
       case 'ResumeAudio':
         // BUG 2 FIX: Re-speak the currently-playing segment from the start.
         // The engine cannot offer mid-utterance offset for TTS.
+        // For pre-rendered audio: resume from paused offset.
         this.handleResumeAudio();
         break;
       case 'RequestLocationMode':
@@ -384,29 +459,129 @@ export class TourRuntime {
     }
   }
 
-  private handlePlaySegment(segmentId: string): void {
-    const text =
-      this.narrativeResolver(segmentId) ?? 'Approaching a point of interest along your route.';
-    const language = this.config?.language ?? 'en';
-    // Memorial and other weighted content is delivered more slowly than
-    // standard narration; the multiplier is authored per segment.
-    const multiplier = this.segmentStyleResolver(segmentId)?.rateMultiplier ?? 1;
-    const baseRate: number = this.playbackSpeed;
-    const rate = baseRate * multiplier;
+  private handlePlaySegment(cmd: Extract<EngineCommand, { kind: 'PlaySegment' }>): void {
+    const { segmentId, source, language, assetPath } = cmd;
 
-    // Track for replay (public contract).
-    this.lastSpokenText = text;
-    this.lastSpokenLanguage = language;
-    this.lastSpokenRate = rate;
+    // Stop any in-flight source to preserve the single-segment invariant.
+    this.stopAllPlayback();
 
     this.currentSegmentId = segmentId;
 
-    // Stop anything in flight to preserve the single-segment invariant.
-    // This is a deliberate pre-emptive stop.
+    if (source === 'audio' && this.audioPort) {
+      // ─── Pre-rendered audio path ────────────────────────────────────
+      this.activeSourceIsAudio = true;
+      this.lastSource = 'audio';
+      this.lastAudioAssetPath = assetPath;
+      this.lastPlaybackLanguage = language;
+      // Preserve TTS replay data in case audio fails and we fallback.
+      const text = this.narrativeResolver(segmentId);
+      if (text) {
+        this.lastSpokenText = text;
+        this.lastSpokenLanguage = language;
+        const multiplier = this.segmentStyleResolver(segmentId)?.rateMultiplier ?? 1;
+        this.lastSpokenRate = (this.playbackSpeed as number) * multiplier;
+      }
+
+      const gen = this.audioPlayGeneration;
+      const callbacks: AudioPlaybackCallbacks = {
+        onStart: () => {
+          // Optional: could notify UI.
+        },
+        onComplete: () => {
+          if (this.audioPlayGeneration !== gen) return;
+          if (this.currentSegmentId !== segmentId) return;
+          this.currentSegmentId = null;
+          this.activeSourceIsAudio = false;
+          this.dispatch({ kind: 'AudioFinished', segmentId });
+        },
+        onError: (_msg: string) => {
+          if (this.audioPlayGeneration !== gen) return;
+          if (this.currentSegmentId !== segmentId) return;
+          // Stop the port to release native resources/listeners before fallback.
+          this.audioPort!.stop();
+          this.activeSourceIsAudio = false;
+          // Fallback: try TTS for the same segment if narrative is available.
+          const fallbackText = this.narrativeResolver(segmentId);
+          if (fallbackText) {
+            this.lastSource = 'tts';
+            this.lastPlaybackLanguage = language;
+            const multiplier = this.segmentStyleResolver(segmentId)?.rateMultiplier ?? 1;
+            const rate = (this.playbackSpeed as number) * multiplier;
+            this.lastSpokenText = fallbackText;
+            this.lastSpokenLanguage = language;
+            this.lastSpokenRate = rate;
+            this.speakWithWatchdog(fallbackText, language, rate, segmentId);
+          } else {
+            // No TTS fallback available — advance the engine safely.
+            this.currentSegmentId = null;
+            this.setSpeechStatus({ available: false, reason: 'failed' });
+            this.dispatch({ kind: 'AudioFinished', segmentId });
+          }
+        },
+      };
+
+      this.audioPort.play(assetPath, callbacks);
+    } else if (source === 'audio' && !this.audioPort) {
+      // ─── Audio source requested but no port available ───────────────
+      // Fallback to matching narrative via TTS if available. Do NOT use
+      // generic text — only speak verified narrative content for packs.
+      this.activeSourceIsAudio = false;
+      const text = this.narrativeResolver(segmentId);
+      if (text) {
+        this.lastSource = 'tts';
+        this.lastAudioAssetPath = null;
+        this.lastPlaybackLanguage = language;
+        const multiplier = this.segmentStyleResolver(segmentId)?.rateMultiplier ?? 1;
+        const baseRate: number = this.playbackSpeed;
+        const rate = baseRate * multiplier;
+        this.lastSpokenText = text;
+        this.lastSpokenLanguage = language;
+        this.lastSpokenRate = rate;
+        this.speakWithWatchdog(text, language, rate, segmentId);
+      } else {
+        // No narrative available either — safely advance.
+        this.currentSegmentId = null;
+        this.setSpeechStatus({ available: false, reason: 'failed' });
+        this.dispatch({ kind: 'AudioFinished', segmentId });
+      }
+    } else {
+      // ─── TTS path (legacy/demo embedded tours) ──────────────────────
+      this.activeSourceIsAudio = false;
+      this.lastSource = 'tts';
+      this.lastAudioAssetPath = null;
+      this.lastPlaybackLanguage = language;
+
+      const text =
+        this.narrativeResolver(segmentId) ?? 'Approaching a point of interest along your route.';
+      const multiplier = this.segmentStyleResolver(segmentId)?.rateMultiplier ?? 1;
+      const baseRate: number = this.playbackSpeed;
+      const rate = baseRate * multiplier;
+
+      // Track for replay (public contract).
+      this.lastSpokenText = text;
+      this.lastSpokenLanguage = language;
+      this.lastSpokenRate = rate;
+
+      this.speakWithWatchdog(text, language, rate, segmentId);
+    }
+  }
+
+  /**
+   * Stop all active playback sources (both audio port and TTS).
+   * Used to enforce single-segment invariant and for clean teardown.
+   */
+  private stopAllPlayback(): void {
+    // Increment generation to invalidate any pending audio callbacks.
+    this.audioPlayGeneration++;
+    // Stop pre-rendered audio player if active.
+    if (this.activeSourceIsAudio && this.audioPort) {
+      this.audioPort.stop();
+      this.activeSourceIsAudio = false;
+    }
+    // Stop TTS.
     this.deliberateStop = true;
     void Speech.stop().catch(() => undefined);
-
-    this.speakWithWatchdog(text, language, rate, segmentId);
+    this.clearSpeechWatchdogs();
   }
 
   /**
@@ -528,6 +703,15 @@ export class TourRuntime {
     return this.speechStatus;
   }
 
+  /**
+   * Whether the current or last segment used pre-rendered audio or TTS.
+   * Returns 'audio' when playing a verified pack file, 'tts' when using
+   * device speech synthesis.
+   */
+  getActiveSource(): 'audio' | 'tts' {
+    return this.lastSource;
+  }
+
   subscribeSpeechStatus(listener: SpeechStatusListener): () => void {
     this.speechStatusListeners.add(listener);
     return () => {
@@ -560,17 +744,23 @@ export class TourRuntime {
   }
 
   private handleResumeAudio(): void {
-    // Re-speak the currently-playing segment from the start. expo-speech has
-    // no seek/resume, so restarting the segment is the only option; this is
-    // why segments are authored short (and why pre-rendered audio is the real
-    // fix — see HANDOFF next-step 7).
+    // For pre-rendered audio: resume from paused offset (no restart needed).
+    if (this.activeSourceIsAudio && this.audioPort) {
+      this.audioPort.resume();
+      return;
+    }
+    // For TTS: Re-speak the currently-playing segment from the start.
+    // expo-speech has no seek/resume, so restarting the segment is the
+    // only option.
     const playing = this.getPlayingSegment();
     if (!playing) return;
 
     const segmentId = playing.segmentId;
     const text =
       this.narrativeResolver(segmentId) ?? 'Approaching a point of interest along your route.';
-    const language = this.config?.language ?? 'en';
+    // Use the actual language selected by source resolution/fallback, not
+    // blindly config.language, so resumed TTS matches the original segment.
+    const language = this.lastPlaybackLanguage;
     const multiplier = this.segmentStyleResolver(segmentId)?.rateMultiplier ?? 1;
     const rate = (this.playbackSpeed as number) * multiplier;
 
@@ -596,8 +786,8 @@ export class TourRuntime {
     this.appStateSubscription = null;
     this.locationAdapter?.stop();
     this.locationAdapter = null;
-    this.deliberateStop = true;
-    void Speech.stop().catch(() => undefined);
+    // Stop all playback sources.
+    this.stopAllPlayback();
     deactivateKeepAwake('tramio-tour').catch(() => undefined);
     void releaseTourAudioSession().catch(() => undefined);
     // Reset per-tour state.
