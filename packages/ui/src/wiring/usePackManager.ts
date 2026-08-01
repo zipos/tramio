@@ -8,8 +8,10 @@ import {
   loadPackTour,
   openDeviceStorage,
   verifyManifestSignatureSpki,
+  PackIntegrityError,
   type LoadedPackTour,
   type StorageManager,
+  type ManifestVerifier,
 } from '../../../storage/src/mobile';
 import {
   DEV_CATALOG_KID,
@@ -40,7 +42,7 @@ function routeKey(bundleId: string, version: string): string {
   return `${bundleId}@${version}`;
 }
 
-const manifestVerifier = {
+const manifestVerifier: ManifestVerifier = {
   verify: (signed: Parameters<typeof verifyManifestSignatureSpki>[1]) =>
     verifyManifestSignatureSpki(DEV_CATALOG_PUBLIC_KEY_SPKI_B64URL, signed, DEV_CATALOG_KID),
 };
@@ -189,9 +191,13 @@ export function usePackManager(): UsePackManagerResult {
         if (!storage) throw new Error('storage not ready');
         const ready = await downloader?.isPackStartable(bundleId, version);
         if (!ready) throw new Error('pack not installed');
-        return await loadPackTour(storage, { bundleId, version });
+        return await loadPackTour(storage, { bundleId, version }, manifestVerifier);
       } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : String(err));
+        if (err instanceof PackIntegrityError) {
+          setError(err.userMessage);
+        } else {
+          setError(err instanceof Error ? err.message : String(err));
+        }
         throw err;
       }
     },

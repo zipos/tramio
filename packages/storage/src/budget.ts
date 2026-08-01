@@ -1,6 +1,7 @@
 // Storage budget enforcement, LRU eviction, and storage UI data source.
 import type { StorageManager } from './manager';
 import type { PackRef } from './paths';
+import { AsyncMutex } from './asyncMutex';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -71,6 +72,27 @@ export type BudgetCheckResult =
 export type ActiveTourProvider = () => PackRef | null;
 
 // ---------------------------------------------------------------------------
+// Shared mutex registry (WeakMap keyed by StorageManager)
+// ---------------------------------------------------------------------------
+
+/**
+ * WeakMap ensures that all StorageBudget instances sharing the same
+ * StorageManager share the same mutex. When the StorageManager is GC'd,
+ * the mutex entry is also collected. This prevents cross-instance races
+ * on the same underlying storage without permanent memory leaks.
+ */
+const sharedMutexes = new WeakMap<StorageManager, AsyncMutex>();
+
+function getMutexForStorage(storage: StorageManager): AsyncMutex {
+  let mutex = sharedMutexes.get(storage);
+  if (!mutex) {
+    mutex = new AsyncMutex();
+    sharedMutexes.set(storage, mutex);
+  }
+  return mutex;
+}
+
+// ---------------------------------------------------------------------------
 // StorageBudget
 // ---------------------------------------------------------------------------
 
@@ -86,16 +108,22 @@ export interface StorageBudgetOptions {
  * Composed on top of `StorageManager` (same pattern as the downloader).
  * Reads and writes the `lru_access` table for per-pack byte tracking and
  * last-access timestamps.
+ *
+ * The mutex is shared across all StorageBudget instances backed by the same
+ * StorageManager (via WeakMap) so concurrent callers cannot race on budget
+ * state.
  */
 export class StorageBudget {
   private readonly storage: StorageManager;
   private config: StorageBudgetConfig;
   private readonly activeTourProvider: ActiveTourProvider;
+  private readonly mutex: AsyncMutex;
 
   constructor(opts: StorageBudgetOptions) {
     this.storage = opts.storage;
     this.config = { ...opts.config };
     this.activeTourProvider = opts.activeTourProvider;
+    this.mutex = getMutexForStorage(opts.storage);
   }
 
   // -------------------------------------------------------------------------
@@ -144,7 +172,7 @@ export class StorageBudget {
    * downloader after a successful promotion.
    */
   async registerPack(ref: PackRef, bytesUsed: number): Promise<void> {
-    await this.touchPack(ref, bytesUsed);
+    await this.mutex.withLock(() => this.touchPack(ref, bytesUsed));
   }
 
   /**
@@ -169,32 +197,32 @@ export class StorageBudget {
    * Returns the outcome so the caller can decide how to proceed.
    */
   async checkBudget(newPackBytes: number): Promise<BudgetCheckResult> {
-    const totalUsed = await this.totalUsedBytes();
-    const projectedUsage = totalUsed + newPackBytes;
+    return this.mutex.withLock(async () => {
+      const totalUsed = await this.totalUsedBytes();
+      const projectedUsage = totalUsed + newPackBytes;
 
-    if (projectedUsage <= this.config.budgetBytes) {
-      return { outcome: 'ok' };
-    }
+      if (projectedUsage <= this.config.budgetBytes) {
+        return { outcome: 'ok' } as const;
+      }
 
-    const overageBytes = projectedUsage - this.config.budgetBytes;
+      const overageBytes = projectedUsage - this.config.budgetBytes;
 
-    if (this.config.evictionMode === 'manual') {
-      // Req 19.2: prompt the user to raise budget or select packs to remove.
-      return { outcome: 'over-budget-manual', overageBytes };
-    }
+      if (this.config.evictionMode === 'manual') {
+        return { outcome: 'over-budget-manual', overageBytes } as const;
+      }
 
-    // Auto-evict mode (Req 19.3): evict LRU packs until budget is satisfied.
-    const evicted = await this.evictUntilFits(newPackBytes);
-    if (evicted === null) {
-      // Could not free enough space (only active-tour pack remains).
-      const currentUsed = await this.totalUsedBytes();
-      return {
-        outcome: 'over-budget-blocked',
-        overageBytes: currentUsed + newPackBytes - this.config.budgetBytes,
-      };
-    }
+      // Auto-evict mode (Req 19.3): evict LRU packs until budget is satisfied.
+      const evicted = await this.evictUntilFitsInternal(newPackBytes);
+      if (evicted === null) {
+        const currentUsed = await this.totalUsedBytes();
+        return {
+          outcome: 'over-budget-blocked',
+          overageBytes: currentUsed + newPackBytes - this.config.budgetBytes,
+        } as const;
+      }
 
-    return { outcome: 'over-budget-evicted', evictedPacks: evicted };
+      return { outcome: 'over-budget-evicted', evictedPacks: evicted } as const;
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -209,6 +237,12 @@ export class StorageBudget {
    * free enough space.
    */
   async evictUntilFits(newPackBytes: number): Promise<ReadonlyArray<PackRef> | null> {
+    return this.mutex.withLock(() => this.evictUntilFitsInternal(newPackBytes));
+  }
+
+  private async evictUntilFitsInternal(
+    newPackBytes: number,
+  ): Promise<ReadonlyArray<PackRef> | null> {
     const evicted: PackRef[] = [];
 
     // Loop: check if budget is satisfied, if not evict the LRU pack.
@@ -225,16 +259,24 @@ export class StorageBudget {
         return null;
       }
 
-      await this.evictPack(candidate);
+      await this.evictPackInternal(candidate);
       evicted.push(candidate);
     }
   }
 
   /**
-   * Evict a specific pack: remove its directory from disk and its
-   * `lru_access` row. Also cleans up `pack_progress` rows.
+   * Evict a specific pack (public API). Serialized through the shared mutex
+   * to prevent races with checkBudget and other eviction calls.
    */
   async evictPack(ref: PackRef): Promise<void> {
+    await this.mutex.withLock(() => this.evictPackInternal(ref));
+  }
+
+  /**
+   * Internal eviction — called while already holding the mutex.
+   * Removes the pack directory from disk, its LRU row, and pack_progress rows.
+   */
+  private async evictPackInternal(ref: PackRef): Promise<void> {
     // Remove from disk.
     const dir = this.storage.packDir(ref);
     await this.storage.fs.rm(dir, { recursive: true, force: true });

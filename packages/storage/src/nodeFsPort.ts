@@ -43,6 +43,10 @@ export function createNodeFsPort(): FileSystemPort {
       return fs.readFile(filePath, 'utf8');
     },
 
+    async writeUtf8(filePath, content) {
+      await fs.writeFile(filePath, content, 'utf8');
+    },
+
     async sha256Hex(filePath) {
       const hash = new Sha256();
       await new Promise<void>((resolve, reject) => {
@@ -72,6 +76,16 @@ export function createNodeFsPort(): FileSystemPort {
         await handle.close();
       }
       return { bytesWritten, sha256Hex: hash.finalizeHex() };
+    },
+
+    async fileSize(filePath) {
+      try {
+        const st = await fs.stat(filePath);
+        return st.isFile() ? st.size : null;
+      } catch (err: unknown) {
+        if (isEnoent(err)) return null;
+        throw err;
+      }
     },
   };
 }

@@ -29,7 +29,11 @@ export interface FileSystemPort {
   /** Returns `null` when the path does not exist. */
   stat(target: string): Promise<FileStat | null>;
   readUtf8(filePath: string): Promise<string>;
+  /** Write a UTF-8 string atomically. Parent directories must already exist. */
+  writeUtf8(filePath: string, content: string): Promise<void>;
   sha256Hex(filePath: string): Promise<string>;
+  /** Returns the byte length of a file (or null if absent). */
+  fileSize(filePath: string): Promise<number | null>;
   writeFromIterable(
     filePath: string,
     chunks: AsyncIterable<Uint8Array>,

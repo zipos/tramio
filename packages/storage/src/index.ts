@@ -31,6 +31,12 @@ export {
 
 export { loadPackTour, type LoadedPackTour } from './packLoader';
 
+export { PackIntegrityError, type PackIntegrityKind } from './packIntegrity';
+export { extractNarrativeBody } from './extractNarrativeBody';
+export { SIGNED_LOCK_RELATIVE_PATH, CONTROL_DIR } from './controlFile';
+export { AsyncMutex } from './asyncMutex';
+export { KeyedMutex } from './keyedMutex';
+
 export { createFetchPackHttpClient, type FetchPackHttpClientOptions } from './fetchPackHttpClient';
 
 export { verifyManifestSignatureSpki } from './signatureVerify';

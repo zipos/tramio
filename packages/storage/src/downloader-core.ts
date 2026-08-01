@@ -7,6 +7,8 @@ import type { StorageManager } from './manager';
 import type { PackProgressStatus } from './schema';
 import { stageAndRename } from './fsPort';
 import { assertSafePackRelativePath, pathDirname, pathJoin } from './pathJoin';
+import { CONTROL_DIR, SIGNED_LOCK_RELATIVE_PATH } from './controlFile';
+import { KeyedMutex } from './keyedMutex';
 
 import type {
   DownloadError,
@@ -40,6 +42,7 @@ export class OfflinePackDownloader {
   private readonly storage: StorageManager;
   private readonly http: PackHttpClient;
   private readonly manifestVerifier: ManifestVerifier;
+  private readonly downloadMutex = new KeyedMutex();
 
   constructor(opts: OfflinePackDownloaderOptions) {
     this.storage = opts.storage;
@@ -47,8 +50,20 @@ export class OfflinePackDownloader {
     this.manifestVerifier = opts.manifestVerifier;
   }
 
+  /**
+   * Download a pack. Same bundle@version calls serialize via keyed mutex;
+   * different refs proceed concurrently.
+   */
   async download(bundleId: string, version: string): Promise<DownloadResult> {
+    const key = `${bundleId}@${version}`;
+    return this.downloadMutex.withLock(key, () => this.downloadInternal(bundleId, version));
+  }
+
+  private async downloadInternal(bundleId: string, version: string): Promise<DownloadResult> {
     const ref: PackRef = { bundleId, version };
+
+    // Run recovery at entry — ensures consistent starting state.
+    await this.recover(bundleId, version);
 
     let signed: SignedManifest;
     try {
@@ -168,8 +183,41 @@ export class OfflinePackDownloader {
       };
     }
 
+    // Persist the signed envelope as the control file BEFORE activation.
+    // This is the trust anchor for all subsequent load-time verification.
+    const controlDir = pathJoin(stagingRoot, CONTROL_DIR);
+    await this.storage.fs.mkdir(controlDir, { recursive: true });
+    const lockPath = pathJoin(stagingRoot, SIGNED_LOCK_RELATIVE_PATH);
+    await this.storage.fs.writeUtf8(lockPath, JSON.stringify(signed));
+
+    // --- Crash-safe activation (backup-then-swap) ---
     const finalPackDir = this.storage.packDir(ref);
-    await stageAndRename(this.storage.fs, stagingRoot, finalPackDir);
+    const backupDir = `${finalPackDir}.backup`;
+
+    // If a previous backup exists (abandoned recovery), remove it first.
+    await this.storage.fs.rm(backupDir, { recursive: true, force: true });
+
+    // If the final directory already exists (reinstall same version),
+    // move it to backup before promoting staging.
+    const finalStat = await this.storage.fs.stat(finalPackDir);
+    if (finalStat !== null && finalStat.isDirectory) {
+      await this.storage.fs.rename(finalPackDir, backupDir);
+    }
+
+    // Promote staging to final (atomic rename on same volume).
+    try {
+      await stageAndRename(this.storage.fs, stagingRoot, finalPackDir);
+    } catch (promoteErr) {
+      // Rollback: restore backup if promotion failed.
+      const backupExists = await this.storage.fs.stat(backupDir);
+      if (backupExists !== null && backupExists.isDirectory) {
+        await this.storage.fs.rename(backupDir, finalPackDir).catch(() => undefined);
+      }
+      throw promoteErr;
+    }
+
+    // Promotion succeeded — remove the backup (best-effort).
+    await this.storage.fs.rm(backupDir, { recursive: true, force: true }).catch(() => undefined);
 
     return { ok: true };
   }
@@ -187,6 +235,13 @@ export class OfflinePackDownloader {
       return false;
     }
 
+    // Verify signed lock control file exists.
+    const lockPath = pathJoin(finalDir, SIGNED_LOCK_RELATIVE_PATH);
+    const lockStat = await this.storage.fs.stat(lockPath);
+    if (lockStat === null || !lockStat.isFile) {
+      return false;
+    }
+
     const rows = await this.storage.driver.all<{ status: string }>(
       `SELECT status FROM pack_progress WHERE bundle_id = ? AND version = ?`,
       [bundleId, version],
@@ -195,6 +250,106 @@ export class OfflinePackDownloader {
       return false;
     }
     return rows.every((r) => r.status === 'complete');
+  }
+
+  /**
+   * Recover from crash/abandoned states on startup or before a new download.
+   *
+   * Redesigned recovery rules (Wave 2 fix):
+   *
+   * 1. **final + backup**: Final is the post-promotion candidate. Verify its
+   *    signed envelope, identity, and every listed asset digest/size. If valid,
+   *    remove stale backup. If final cannot verify, restore backup.
+   *    Staging is KEPT for resume of an interrupted update.
+   *
+   * 2. **no final + backup**: Restore backup to final. KEEP staging — it is
+   *    the resumable download for the interrupted new version.
+   *
+   * 3. **staging without backup (no final)**: KEEP staging for resume.
+   *    Never promote and never delete merely because it exists.
+   *
+   * 4. **final + staging without backup**: KEEP staging — it is a resumable
+   *    reinstall/update attempt. Only clean up if final is valid.
+   *    (Staging is not deleted here; the next download() call will resume it.)
+   *
+   * Key invariant: staging is NEVER deleted by recovery. It stores verified
+   * partial assets for Property 14 resume.
+   */
+  async recover(bundleId: string, version: string): Promise<void> {
+    const ref: PackRef = { bundleId, version };
+    const finalDir = this.storage.packDir(ref);
+    const backupDir = `${finalDir}.backup`;
+
+    const finalStat = await this.storage.fs.stat(finalDir);
+    const backupStat = await this.storage.fs.stat(backupDir);
+
+    if (finalStat !== null && finalStat.isDirectory) {
+      if (backupStat !== null && backupStat.isDirectory) {
+        // Case 1: final + backup. Verify the complete promoted pack before
+        // discarding the only known-good rollback copy.
+        const finalValid = await this.verifyFinalPack(ref);
+        if (finalValid) {
+          // Final is good — remove stale backup.
+          await this.storage.fs.rm(backupDir, { recursive: true, force: true });
+        } else {
+          // Final is broken — restore backup.
+          await this.storage.fs.rm(finalDir, { recursive: true, force: true });
+          await this.storage.fs.rename(backupDir, finalDir);
+        }
+      }
+      // Cases: final exists (with or without staging, no backup) — nothing to do.
+      // Staging is kept for resume.
+      return;
+    }
+
+    // Final absent.
+    if (backupStat !== null && backupStat.isDirectory) {
+      // Case 2: no final + backup — restore backup to final.
+      await this.storage.fs.rename(backupDir, finalDir);
+      // Staging is KEPT for resume of the interrupted new download.
+      return;
+    }
+
+    // Case 3: no final, no backup — staging (if any) is kept for resume.
+    // Nothing to do.
+  }
+
+  /**
+   * Verify the complete final pack before recovery discards a known-good backup.
+   * Signature+identity alone only prove the lock is authentic; every listed
+   * asset must also still exist with the signed size and digest. This path is
+   * rare (only a crash left both final and backup), so hashing the full pack is
+   * preferable to preserving a corrupt promoted directory.
+   */
+  private async verifyFinalPack(ref: PackRef): Promise<boolean> {
+    const finalDir = this.storage.packDir(ref);
+    const lockPath = pathJoin(finalDir, SIGNED_LOCK_RELATIVE_PATH);
+
+    try {
+      const raw = await this.storage.fs.readUtf8(lockPath);
+      const signed = JSON.parse(raw) as SignedManifest;
+
+      const sigOk = await this.manifestVerifier.verify(signed);
+      if (!sigOk) return false;
+      if (signed.payload.bundleId !== ref.bundleId || signed.payload.version !== ref.version) {
+        return false;
+      }
+
+      const results = await Promise.all(
+        signed.payload.assets.map(async (asset) => {
+          assertSafePackRelativePath(asset.path);
+          const assetPath = pathJoin(finalDir, asset.path);
+          const stat = await this.storage.fs.stat(assetPath);
+          if (stat === null || !stat.isFile) return false;
+          const size = await this.storage.fs.fileSize(assetPath);
+          if (size !== null && size !== asset.sizeBytes) return false;
+          return this.storage.verifySha256(assetPath, asset.sha256);
+        }),
+      );
+      return results.every(Boolean);
+    } catch {
+      return false;
+    }
   }
 
   private async seedPackProgress(

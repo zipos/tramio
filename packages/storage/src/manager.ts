@@ -87,6 +87,11 @@ export class StorageManager {
     return sha256Hex(this.fs, filePath);
   }
 
+  /** Byte size of a file, or null if absent. */
+  fileSize(filePath: string): Promise<number | null> {
+    return this.fs.fileSize(filePath);
+  }
+
   /** Release the SQLite handle. Filesystem state is persistent. */
   close(): Promise<void> {
     return this.driver.close();

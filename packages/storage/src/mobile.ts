@@ -7,6 +7,9 @@ export { openDeviceStorage } from './deviceStorage';
 export { loadPackTour, type LoadedPackTour } from './packLoader';
 export { createFetchPackHttpClient, type FetchPackHttpClientOptions } from './fetchPackHttpClient';
 export { verifyManifestSignatureSpki } from './signatureVerify';
+export { PackIntegrityError, type PackIntegrityKind } from './packIntegrity';
+export { SIGNED_LOCK_RELATIVE_PATH, CONTROL_DIR } from './controlFile';
+export { AsyncMutex } from './asyncMutex';
 export {
   OfflinePackDownloader,
   sortByDependencyOrder,

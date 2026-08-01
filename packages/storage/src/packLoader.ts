@@ -1,11 +1,20 @@
 // packLoader — read a promoted Offline_Pack into Tour_Engine start config.
+//
+// Wave 2: Full load-time integrity verification against the persisted
+// signed lock envelope. Every asset's SHA-256 and byte size are verified
+// before parsing. Missing lock → re-download required. Tampered content →
+// PackIntegrityError thrown immediately.
 
 import type { StartTourConfig } from '../../engine/src';
 import type { Geofence } from '../../engine/src';
 
 import type { PackRef } from './paths';
 import type { StorageManager } from './manager';
-import { assertSafePackRelativePath } from './pathJoin';
+import type { ManifestVerifier, SignedManifest, ManifestLockAsset } from './downloader-types';
+import { assertSafePackRelativePath, pathJoin } from './pathJoin';
+import { SIGNED_LOCK_RELATIVE_PATH } from './controlFile';
+import { PackIntegrityError } from './packIntegrity';
+import { extractNarrativeBody } from './extractNarrativeBody';
 
 interface AuthoredRoute {
   bundleId: string;
@@ -53,45 +62,134 @@ function parseJson<T>(raw: string, label: string): T {
   try {
     return JSON.parse(raw) as T;
   } catch {
-    throw new Error(`packLoader: invalid JSON in ${label}`);
+    throw new PackIntegrityError('invalid-content', label, 'invalid JSON');
   }
 }
 
 /**
- * Load `route.json`, `pois.json`, and `manifest.json` from an installed pack.
- * Narrative decryption is deferred; geofences come from plaintext `pois.json`.
+ * Verify a single asset's SHA-256 and byte size against the lock entry.
+ * Throws PackIntegrityError on mismatch or missing file.
+ */
+async function verifyAsset(
+  storage: StorageManager,
+  root: string,
+  asset: ManifestLockAsset,
+): Promise<void> {
+  const fullPath = pathJoin(root, asset.path);
+  const fileStat = await storage.fs.stat(fullPath);
+  if (fileStat === null || !fileStat.isFile) {
+    throw new PackIntegrityError('asset-missing', asset.path);
+  }
+
+  const fileSize = await storage.fs.fileSize(fullPath);
+  if (fileSize !== null && fileSize !== asset.sizeBytes) {
+    throw new PackIntegrityError(
+      'size-mismatch',
+      asset.path,
+      `expected ${asset.sizeBytes} bytes, got ${fileSize}`,
+    );
+  }
+
+  const actualSha = await storage.fs.sha256Hex(fullPath);
+  if (actualSha.toLowerCase() !== asset.sha256.toLowerCase()) {
+    throw new PackIntegrityError(
+      'hash-mismatch',
+      asset.path,
+      `expected ${asset.sha256}, got ${actualSha}`,
+    );
+  }
+}
+
+/**
+ * Find the lock entry for a given relative path.
+ */
+function findLockAsset(
+  assets: ReadonlyArray<ManifestLockAsset>,
+  relPath: string,
+): ManifestLockAsset | undefined {
+  return assets.find((a) => a.path === relPath);
+}
+
+/**
+ * Load `route.json`, `pois.json`, and `manifest.json` from an installed pack
+ * with full cryptographic integrity verification.
  *
- * ## Multi-language eager loading (F5)
+ * ## Load-time integrity (Wave 2)
  *
- * Narratives are loaded for ALL languages listed in `manifest.languages` so a
- * mid-tour language switch can resolve `{poiId}:{lang}` immediately. The memory
- * cost is bounded: a typical flagship route has 24 POIs × 2 languages × ~1 KB
- * Markdown ≈ 48 KB which is negligible on mobile.
+ * 1. Read the persisted signed lock (`.tramio/MANIFEST.lock.signed.json`).
+ * 2. Verify Ed25519 signature via the injected `verifier`.
+ * 3. Verify lock identity (bundleId/version) matches the requested ref.
+ * 4. Verify `manifest.json`, `route.json`, `pois.json` SHA-256 + byte size.
+ * 5. Verify each narrative file referenced by pois.json before returning it.
  *
- * ## Integrity (SECURITY NOTE)
+ * Any failure throws `PackIntegrityError` — never returns unverified content.
  *
- * As of this writing, `loadPackTour` does NOT re-verify asset SHA-256 hashes
- * against MANIFEST.lock.json before parsing. Integrity is only enforced at
- * download time by `OfflinePackDownloader`. A tampered narrative Markdown file
- * that was modified after download (e.g. via a malicious file manager, backup
- * restore, or iCloud sync collision) WILL be loaded and spoken to the user
- * without detection.
+ * ## Legacy packs (no persisted lock)
  *
- * This is an accepted residual risk documented in task 3 — the downloader's
- * MANIFEST.lock.json envelope is not persisted to disk, so there is no lock
- * file available at load time to compare against. Fixing this requires a
- * design change (persist the signed manifest) that is out of scope for
- * packages/storage alone.
+ * Packs installed before Wave 2 have no `.tramio/MANIFEST.lock.signed.json`.
+ * They fail with `PackIntegrityError('missing-lock', ...)` — the caller must
+ * trigger a re-download. We never implicitly trust legacy packs.
  */
 export async function loadPackTour(
   storage: StorageManager,
   ref: PackRef,
+  verifier: ManifestVerifier,
   language?: string,
 ): Promise<LoadedPackTour> {
   const root = storage.packDir(ref);
-  const manifestRaw = await storage.fs.readUtf8(`${root}/manifest.json`);
-  const routeRaw = await storage.fs.readUtf8(`${root}/route.json`);
-  const poisRaw = await storage.fs.readUtf8(`${root}/pois.json`);
+
+  // Step 1: Read signed lock control file.
+  const lockPath = pathJoin(root, SIGNED_LOCK_RELATIVE_PATH);
+  let lockRaw: string;
+  try {
+    lockRaw = await storage.fs.readUtf8(lockPath);
+  } catch {
+    throw new PackIntegrityError('missing-lock', SIGNED_LOCK_RELATIVE_PATH);
+  }
+
+  let signed: SignedManifest;
+  try {
+    signed = JSON.parse(lockRaw) as SignedManifest;
+  } catch {
+    throw new PackIntegrityError(
+      'missing-lock',
+      SIGNED_LOCK_RELATIVE_PATH,
+      'control file is not valid JSON',
+    );
+  }
+
+  // Step 2: Verify signature.
+  const signatureOk = await verifier.verify(signed);
+  if (!signatureOk) {
+    throw new PackIntegrityError('signature', SIGNED_LOCK_RELATIVE_PATH);
+  }
+
+  // Step 3: Verify identity.
+  if (signed.payload.bundleId !== ref.bundleId || signed.payload.version !== ref.version) {
+    throw new PackIntegrityError(
+      'identity-mismatch',
+      SIGNED_LOCK_RELATIVE_PATH,
+      `lock has ${signed.payload.bundleId}@${signed.payload.version}, expected ${ref.bundleId}@${ref.version}`,
+    );
+  }
+
+  const lockAssets = signed.payload.assets;
+
+  // Step 4: Verify core assets.
+  const coreFiles = ['manifest.json', 'route.json', 'pois.json'] as const;
+  for (const coreFile of coreFiles) {
+    const lockEntry = findLockAsset(lockAssets, coreFile);
+    if (!lockEntry) {
+      throw new PackIntegrityError('asset-not-listed', coreFile);
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await verifyAsset(storage, root, lockEntry);
+  }
+
+  // Now safe to read and parse.
+  const manifestRaw = await storage.fs.readUtf8(pathJoin(root, 'manifest.json'));
+  const routeRaw = await storage.fs.readUtf8(pathJoin(root, 'route.json'));
+  const poisRaw = await storage.fs.readUtf8(pathJoin(root, 'pois.json'));
 
   const manifest = parseJson<AuthoredManifest>(manifestRaw, 'manifest.json');
   const route = parseJson<AuthoredRoute>(routeRaw, 'route.json');
@@ -99,8 +197,6 @@ export async function loadPackTour(
 
   const lang = language ?? manifest.defaultLanguage;
 
-  // Resolve the effective language set. Fall back to [defaultLanguage] when
-  // manifest.languages is absent (partially-authored packs must not crash).
   const allLanguages: readonly string[] =
     manifest.languages && manifest.languages.length > 0 ? manifest.languages : [lang];
 
@@ -112,26 +208,35 @@ export async function loadPackTour(
     authorIndex: poi.authorIndex ?? index,
   }));
 
-  // Load narratives for EVERY language in the manifest so the reducer can
-  // resolve `{poiId}:{lang}` segments for any language at runtime.
-  // Memory note: ~1 KB per POI per language × typical 24 POIs × 2–3 langs ≈ 48–72 KB.
+  // Step 5: Load and verify narratives.
   const narratives: Record<string, string> = {};
   for (const poi of poisFile.pois) {
     if (!poi.narratives) continue;
     for (const narrativeLang of allLanguages) {
       const relPath = poi.narratives[narrativeLang];
       if (!relPath) continue;
+
       try {
         assertSafePackRelativePath(relPath);
-        // eslint-disable-next-line no-await-in-loop
-        const text = await storage.fs.readUtf8(`${root}/${relPath}`);
-        narratives[`${poi.id}:${narrativeLang}`] = text.trim();
       } catch {
-        // Graceful degradation: missing or unreadable narrative files are
-        // silently skipped. Authors WILL ship half-translated packs (some
-        // POIs missing narratives for non-primary languages). The runtime
-        // falls back to a generic line — which is acceptable.
+        throw new PackIntegrityError('asset-missing', relPath, 'unsafe relative path');
       }
+
+      // Verify narrative is in the lock's asset list.
+      const lockEntry = findLockAsset(lockAssets, relPath);
+      if (!lockEntry) {
+        // The narrative is referenced by pois.json but not listed in the lock.
+        // This is an integrity failure — the file cannot be verified.
+        throw new PackIntegrityError('asset-not-listed', relPath);
+      }
+
+      // Verify SHA-256 + size before reading content.
+      // eslint-disable-next-line no-await-in-loop
+      await verifyAsset(storage, root, lockEntry);
+
+      // eslint-disable-next-line no-await-in-loop
+      const text = await storage.fs.readUtf8(pathJoin(root, relPath));
+      narratives[`${poi.id}:${narrativeLang}`] = extractNarrativeBody(text.trim(), relPath);
     }
   }
 

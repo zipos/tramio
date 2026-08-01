@@ -76,6 +76,12 @@ export function createExpoFsPort(): FileSystemPort {
       return LegacyFS.readAsStringAsync(filePath, { encoding: LegacyFS.EncodingType.UTF8 });
     },
 
+    async writeUtf8(filePath, content) {
+      await LegacyFS.writeAsStringAsync(filePath, content, {
+        encoding: LegacyFS.EncodingType.UTF8,
+      });
+    },
+
     async sha256Hex(filePath) {
       const file = new File(filePath);
       return (await hashReadableStream(file.readableStream())).sha256Hex;
@@ -105,6 +111,12 @@ export function createExpoFsPort(): FileSystemPort {
       }
 
       return { bytesWritten, sha256Hex: hash.finalizeHex() };
+    },
+
+    async fileSize(filePath) {
+      const info = await LegacyFS.getInfoAsync(filePath);
+      if (!info.exists || info.isDirectory) return null;
+      return (info as { size?: number }).size ?? null;
     },
   };
 }
