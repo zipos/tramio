@@ -12,3 +12,4 @@ assets
 plugins
 tramio-overnight.json
 *.kiro-session.json
+kiro-final.json

@@ -18,3 +18,16 @@ export { BackgroundBanner } from './components/BackgroundBanner';
 export type { BackgroundBannerProps } from './components/BackgroundBanner';
 export { MidRouteBoardingNotice } from './components/MidRouteBoardingNotice';
 export type { MidRouteBoardingNoticeProps } from './components/MidRouteBoardingNotice';
+export { GpsDeliveryBanner } from './components/GpsDeliveryBanner';
+export type { GpsDeliveryBannerProps } from './components/GpsDeliveryBanner';
+export { FieldDiagnosticsRecorder, bucketAccuracy } from './wiring/fieldDiagnostics';
+export type {
+  AccuracyBucket,
+  RejectionCategory,
+  LifecycleTransition,
+  DeliveryStatusEvent,
+  FieldDiagnosticsReport,
+  DiagnosticsCounters,
+  DiagnosticsClock,
+} from './wiring/fieldDiagnostics';
+export type { LocationDeliveryStatus } from './wiring/TourRuntime';

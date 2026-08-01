@@ -28,10 +28,11 @@ import { AppState, type NativeEventSubscription } from 'react-native';
 
 import type { EngineCommand, EngineEvent, TourState, StartTourConfig } from '../../../engine/src';
 import { INITIAL_STATE, reduce } from '../../../engine/src';
-import { LocationAdapter } from './locationAdapter';
+import { LocationAdapter, type LocationDeliveryStatus } from './locationAdapter';
 import { DEFAULT_PLAYBACK_SPEED, type PlaybackSpeed } from './playbackSpeed';
 import { configureTourAudioSession, releaseTourAudioSession } from './audioSession';
 import type { AudioPlaybackPort, AudioPlaybackCallbacks } from './AudioPlaybackPort';
+import { FieldDiagnosticsRecorder } from './fieldDiagnostics';
 
 export type StateListener = (state: TourState) => void;
 
@@ -79,6 +80,9 @@ export interface BackgroundStatus {
 
 export type BackgroundStatusListener = (status: BackgroundStatus) => void;
 export type LastFixListener = (ms: number | null) => void;
+export type LocationDeliveryStatusListener = (status: LocationDeliveryStatus) => void;
+
+export type { LocationDeliveryStatus };
 
 /**
  * Whether narration can actually be spoken on this device.
@@ -167,6 +171,12 @@ export class TourRuntime {
   private lastFixAtMs: number | null = null;
   private lastFixListeners = new Set<LastFixListener>();
 
+  // ─── Wave 4: Delivery status + diagnostics ─────────────────────────
+  private locationDeliveryStatus: LocationDeliveryStatus = 'acquiring';
+  private locationDeliveryStatusListeners = new Set<LocationDeliveryStatusListener>();
+  private diagnosticsRecorder: FieldDiagnosticsRecorder | null = null;
+  private finalDiagnosticsReport: string | null = null;
+
   // ─── Speech watchdog (missing-TTS-engine detection) ────────────────
   private speechStartTimer: ReturnType<typeof setTimeout> | null = null;
   private speechDoneTimer: ReturnType<typeof setTimeout> | null = null;
@@ -198,6 +208,12 @@ export class TourRuntime {
     this.clearSpeechWatchdogs();
     this.speechStatus = { available: true };
 
+    // Wave 4: Initialize diagnostics recorder for this tour.
+    this.diagnosticsRecorder = new FieldDiagnosticsRecorder();
+    this.finalDiagnosticsReport = null;
+    this.locationDeliveryStatus = 'acquiring';
+    for (const listener of this.locationDeliveryStatusListeners) listener('acquiring');
+
     // Probe for a usable TTS voice up front. A device with no TTS engine
     // installed would otherwise fail silently on the first POI.
     void this.probeSpeechAvailability(config.language);
@@ -214,21 +230,58 @@ export class TourRuntime {
       onAccepted: (update) => {
         this.lastFixAtMs = Date.now();
         this.notifyLastFix();
+        this.diagnosticsRecorder?.recordAccepted();
         this.dispatch({ kind: 'LocationAccepted', update });
       },
       onGeofenceDwell: (poiId) => {
+        this.diagnosticsRecorder?.recordGeofenceFire();
         this.dispatch({ kind: 'GeofenceDwell', poiId });
       },
       onPermissionDenied: () => {
         // Without location we cannot run a tour; end it cleanly.
         this.dispatch({ kind: 'UserCommand', cmd: 'end' });
       },
+      onDelivered: (meta) => {
+        this.diagnosticsRecorder?.recordDelivery(meta.accuracyM);
+      },
+      onRejected: (meta) => {
+        this.diagnosticsRecorder?.recordRejected(meta.reason);
+      },
     });
 
     // Wire background status reporting from the adapter.
     this.locationAdapter.onBackgroundStatusChange = (status) => {
       this.backgroundStatus = status;
+      if (status.mode === 'foreground-only' && status.reason !== undefined) {
+        this.diagnosticsRecorder?.recordChannelTransition('foreground_only_degraded');
+      }
       this.notifyBackgroundStatus();
+    };
+
+    // Wave 4: Wire delivery status.
+    this.locationAdapter.subscribeDeliveryStatus((status) => {
+      this.locationDeliveryStatus = status;
+      if (status === 'recovering') this.diagnosticsRecorder?.recordStallDetected();
+      this.diagnosticsRecorder?.recordDeliveryStatus(status);
+      for (const listener of this.locationDeliveryStatusListeners) listener(status);
+    });
+
+    // Wave 4: Wire diagnostics callbacks.
+    this.locationAdapter.onRecoveryAttempt = () => {
+      this.diagnosticsRecorder?.recordRecoveryAttempt();
+    };
+    this.locationAdapter.onRecoverySuccess = () => {
+      this.diagnosticsRecorder?.recordRecoverySuccess();
+    };
+    this.locationAdapter.onRecoveryFailure = () => {
+      this.diagnosticsRecorder?.recordRecoveryFailure();
+    };
+    this.locationAdapter.onChannelChange = (channel) => {
+      if (channel === 'foreground') {
+        this.diagnosticsRecorder?.recordChannelTransition('foreground');
+      } else {
+        this.diagnosticsRecorder?.recordChannelTransition('background');
+      }
     };
 
     void this.locationAdapter.start().catch(() => {
@@ -300,6 +353,28 @@ export class TourRuntime {
 
   getLastFixAtMs(): number | null {
     return this.lastFixAtMs;
+  }
+
+  // ─── Wave 4: Delivery status & diagnostics public API ───────────────
+
+  getLocationDeliveryStatus(): LocationDeliveryStatus {
+    return this.locationDeliveryStatus;
+  }
+
+  subscribeLocationDeliveryStatus(listener: LocationDeliveryStatusListener): () => void {
+    this.locationDeliveryStatusListeners.add(listener);
+    return () => {
+      this.locationDeliveryStatusListeners.delete(listener);
+    };
+  }
+
+  /**
+   * Get the field diagnostics report. Available during and after the tour.
+   * After tour end, the finalized report remains accessible.
+   */
+  getFieldDiagnosticsReport(): string | null {
+    if (this.finalDiagnosticsReport) return this.finalDiagnosticsReport;
+    return this.diagnosticsRecorder?.exportReport() ?? null;
   }
 
   /**
@@ -790,6 +865,11 @@ export class TourRuntime {
     this.stopAllPlayback();
     deactivateKeepAwake('tramio-tour').catch(() => undefined);
     void releaseTourAudioSession().catch(() => undefined);
+    // Wave 4: Finalize diagnostics — report remains available after Ended.
+    if (this.diagnosticsRecorder) {
+      this.diagnosticsRecorder.finalize();
+      this.finalDiagnosticsReport = this.diagnosticsRecorder.exportReport();
+    }
     // Reset per-tour state.
     this.lastFixAtMs = null;
     this.notifyLastFix();

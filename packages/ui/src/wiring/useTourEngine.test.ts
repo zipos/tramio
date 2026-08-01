@@ -1,3 +1,5 @@
+const mockShare = jest.fn();
+
 // Production audio wiring lifecycle test.
 
 const mockAdapterInstances: Array<{
@@ -16,6 +18,7 @@ jest.mock('react-native', () => ({
   InteractionManager: { runAfterInteractions: (fn: () => void) => fn() },
   Platform: { OS: 'ios', Version: '17.0' },
   PermissionsAndroid: { PERMISSIONS: {}, RESULTS: {} },
+  Share: { share: (content: unknown) => mockShare(content) },
 }));
 
 jest.mock('expo-speech', () => ({
@@ -70,12 +73,25 @@ jest.mock('./ExpoAudioPlaybackAdapter', () => ({
 
 import { createElement } from 'react';
 import { create, act, type ReactTestRenderer } from 'react-test-renderer';
-import { useTourEngine } from './useTourEngine';
+import { useTourEngine, type UseTourEngineResult } from './useTourEngine';
+import type { StartTourConfig } from '../../../engine/src';
+
+let hookResult: UseTourEngineResult | null = null;
 
 function HookProbe(): null {
-  useTourEngine();
+  hookResult = useTourEngine();
   return null;
 }
+
+const DIAGNOSTICS_TEST_CONFIG: StartTourConfig = {
+  bundle: { bundleId: 'must-not-leak', bundleVersion: '1.0.0' },
+  geofences: [],
+  route: [
+    [52.1234, 21.5678],
+    [52.124, 21.568],
+  ],
+  language: 'en',
+};
 
 describe('useTourEngine production audio wiring', () => {
   beforeAll(() => {
@@ -84,6 +100,8 @@ describe('useTourEngine production audio wiring', () => {
 
   beforeEach(() => {
     mockAdapterInstances.length = 0;
+    mockShare.mockClear();
+    hookResult = null;
   });
 
   it('owns and releases one fresh audio adapter per hook lifecycle', async () => {
@@ -94,6 +112,7 @@ describe('useTourEngine production audio wiring', () => {
 
     expect(mockAdapterInstances).toHaveLength(1);
     const firstAdapter = mockAdapterInstances[0]!;
+    expect(mockShare).not.toHaveBeenCalled();
 
     await act(async () => {
       first!.unmount();
@@ -112,5 +131,40 @@ describe('useTourEngine production audio wiring', () => {
       second!.unmount();
     });
     expect(mockAdapterInstances[1]!.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares only on explicit request and keeps the finalized report redacted', async () => {
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(createElement(HookProbe));
+    });
+
+    expect(mockShare).not.toHaveBeenCalled();
+
+    await act(async () => {
+      hookResult!.startTour(DIAGNOSTICS_TEST_CONFIG);
+      await Promise.resolve();
+    });
+    expect(mockShare).not.toHaveBeenCalled();
+
+    await act(async () => {
+      hookResult!.endTour();
+    });
+    expect(mockShare).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await hookResult!.shareFieldDiagnostics();
+    });
+
+    expect(mockShare).toHaveBeenCalledTimes(1);
+    const shared = mockShare.mock.calls[0]![0] as { message: string };
+    expect(shared.message).toContain('privacyStatement');
+    expect(shared.message).not.toContain('must-not-leak');
+    expect(shared.message).not.toContain('52.1234');
+    expect(shared.message).not.toContain('21.5678');
+
+    await act(async () => {
+      renderer!.unmount();
+    });
   });
 });

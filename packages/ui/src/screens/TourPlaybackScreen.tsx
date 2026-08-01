@@ -23,6 +23,8 @@ import {
 import { NextPoiIndicator } from '../components/NextPoiIndicator';
 import { BackgroundBanner } from '../components/BackgroundBanner';
 import { MidRouteBoardingNotice } from '../components/MidRouteBoardingNotice';
+import { GpsDeliveryBanner } from '../components/GpsDeliveryBanner';
+import type { LocationDeliveryStatus } from '../wiring/TourRuntime';
 import {
   detectMidRouteBoarding,
   findNextPoi,
@@ -59,6 +61,10 @@ export interface TourPlaybackScreenProps {
   poiNames: ReadonlyMap<string, string>;
   /** Route polyline for along-route projections. */
   routePolyline: readonly LatLng[];
+  /** Wave 4: GPS delivery health status. */
+  locationDeliveryStatus?: LocationDeliveryStatus;
+  /** Wave 4: Share field diagnostics on explicit user press. */
+  onShareFieldDiagnostics?: () => void;
 }
 
 function getSession(state: TourState) {
@@ -91,6 +97,8 @@ export function TourPlaybackScreen({
   lastFixAtMs,
   poiNames,
   routePolyline,
+  locationDeliveryStatus,
+  onShareFieldDiagnostics,
 }: TourPlaybackScreenProps): ReactElement {
   const session = getSession(state);
   const segmentId = getPlayingSegmentId(state);
@@ -167,6 +175,14 @@ export function TourPlaybackScreen({
 
       {/* FIX 5: Background degradation banner */}
       {showBackgroundBanner ? <BackgroundBanner reason={backgroundStatus.reason} /> : null}
+
+      {/* Wave 4: GPS delivery health banner */}
+      {locationDeliveryStatus ? (
+        <GpsDeliveryBanner
+          deliveryStatus={locationDeliveryStatus}
+          poorAccuracy={locationDeliveryStatus === 'live' && gpsStatus === 'acquiring'}
+        />
+      ) : null}
 
       {/* FIX 7: Mid-route boarding notice */}
       {midRouteInfo ? (
@@ -274,6 +290,19 @@ export function TourPlaybackScreen({
           <Text style={styles.endButtonText}>End Tour</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Wave 4: Field diagnostics share — secondary control */}
+      {onShareFieldDiagnostics ? (
+        <TouchableOpacity
+          style={styles.diagnosticsButton}
+          onPress={onShareFieldDiagnostics}
+          accessibilityRole="button"
+          accessibilityLabel="Share field diagnostics report"
+          accessibilityHint="Shares a report with no coordinates, route IDs, or personal identifiers"
+        >
+          <Text style={styles.diagnosticsButtonText}>Share diagnostics</Text>
+        </TouchableOpacity>
+      ) : null}
     </ScrollView>
   );
 }
@@ -437,5 +466,23 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  diagnosticsButton: {
+    marginTop: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#d4d4d4',
+    backgroundColor: '#f9fafb',
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  diagnosticsButtonText: {
+    color: '#6b7280',
+    fontSize: 13,
+    fontWeight: '500',
   },
 });

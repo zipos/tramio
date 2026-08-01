@@ -287,6 +287,119 @@ without it, updates pause when the app backgrounds (limitation #1 above).
 
 ---
 
+---
+
+## Wave 4: GPS Delivery-Stall Recovery & Field Diagnostics
+
+### Algorithm — Delivery watchdog and bounded recovery
+
+The `LocationAdapter` (Wave 4 extension) distinguishes **delivery** (any raw
+expo-location callback reached JS) from **acceptance** (the fix passed the
+pipeline's accuracy and spike gates). A delivery watchdog timer fires when no
+raw callback arrives within the configurable stall threshold.
+
+**Stall threshold justification:** Default = 15 000 ms. The engine's Dead
+Reckoning phase begins at 15 s without an accepted fix. By triggering delivery
+recovery at the same boundary, we attempt to restore the provider before DR
+starts advancing on stale data.
+
+**State machine:**
+
+```
+acquiring → (first callback) → live → (no callback for threshold) → recovering
+recovering → (recovery complete, still no callback) → stalled
+stalled → (backoff timer) → recovering → stalled → ...
+any → (raw callback arrives) → live   ← resets backoff
+```
+
+**Bounded backoff:** After each failed recovery cycle (provider restarted but
+no new callback), the next threshold doubles: 15 → 30 → 60 s (capped at
+`maxBackoffMs`). A single successful delivery resets to base. This prevents
+restart storms while keeping low-frequency recovery possible indefinitely.
+
+**Recovery actions:**
+
+- **Foreground channel:** remove the existing `LocationSubscription`, then
+  `watchPositionAsync` again.
+- **Background channel:** `stopLocationUpdatesAsync` + `startLocationUpdatesAsync`
+  (idempotent). If background restart throws, demote to foreground and arm a
+  foreground watch. Never tear down a working foreground watch prematurely.
+
+**Serialization & race safety:** A tour generation counter invalidates every
+async continuation after `stop()`, while a separate foreground-watch generation
+invalidates callbacks retained by removed subscriptions. The `cancelled` flag
+(BUG 4 invariant) is checked at every await boundary. A `recovering` flag
+serializes concurrent attempts. A recovery is counted successful only after a
+fresh raw callback arrives—not merely when a restart API resolves.
+
+### Privacy contract — FieldDiagnosticsRecorder
+
+The recorder (`packages/ui/src/wiring/fieldDiagnostics.ts`) is a pure in-memory
+bounded ring + counter structure. **Structural invariants (enforced by type +
+tests):**
+
+- **NO coordinates.** The `onDelivered` event carries only bucket-input
+  accuracy — never lat/lon or a provider/wall-clock timestamp. The recorder's
+  API does not accept coordinate types.
+- **NO route/bundle/POI IDs.** The recorder knows nothing about content.
+- **NO device/account identifiers.**
+- **NO free-form error messages.** All categories are fixed `LifecycleTransition`
+  enums.
+- **NO wall-clock timestamps.** All times are elapsed-since-start, quantized to
+  500 ms buckets.
+- **Accuracy is bucketed** (≤10 / ≤25 / ≤50 / >50 / unknown), never exact.
+
+The exported JSON report includes an explicit `privacyStatement` field and a
+`version: 1` tag for forward compatibility.
+
+**Caps:** Ring limited to 200 entries (oldest evicted). Serialized report capped
+at 8 192 bytes (ring truncated, then dropped entirely if still over). Status
+history capped at 50.
+
+**No automatic sharing.** The report stays in memory. `useTourEngine` exposes
+`shareFieldDiagnostics()` which calls `Share.share({message})` only when the
+user explicitly presses "Share diagnostics." The function catches Share
+rejection without crashing.
+
+### Field ride checklist (route 180 northbound)
+
+Before accepting field-ride data:
+
+1. Build: `npx expo prebuild --clean && npm run ios` (or Android)
+2. Board bus 180 at Wilanów → Start Tour → grant foreground + background location
+3. Lock the phone after first 3 POIs fire. Verify background delivery continues.
+4. After ride: tap "Share diagnostics" → send report to yourself.
+5. Verify report JSON:
+   - `counters.rawDeliveries` > 0 for entire ride duration
+   - `counters.recoveryAttempts` shows any stalls encountered
+   - `accuracyDistribution` shows bucket profile
+   - No retry interval exceeds 60 s (the provider itself may remain stalled)
+   - `lifecycleRing` shows channel transitions if background was active
+6. Compare `counters.geofenceFires` against the 24 authored POIs.
+7. If `geofenceFires < 20`, investigate: accuracy distribution (too many >50?),
+   recovery failures, or geofence radius too tight for this segment.
+
+### Residual from actual route-180 ride
+
+**No one has ridden with this build yet.** The field diagnostics feature exists
+precisely to instrument the first real ride. Residuals will be recorded here
+after the ride happens.
+
+### Simulator boundary
+
+The simulator (`packages/simulator/`) models deterministic GPS feeds and engine
+state transitions. It does **not** model:
+
+- OS-level callback delivery interruptions (the phone silently stopping
+  `watchPositionAsync` or TaskManager).
+- Recovery restart sequences (these are wiring-layer concerns, not engine).
+- expo-location internal retry/reconnect behavior.
+
+The watchdog/recovery tests in `locationAdapter.recovery.test.ts` use fake
+timers to validate these scenarios deterministically without a device.
+
+---
+
 ## Suggested Next Steps (highest value first)
 
 1. **Field-test bus 180 northbound end to end** — ride Wilanów → Żoliborz with

@@ -6,7 +6,7 @@
 
 import { useState } from 'react';
 import type { ReactElement } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import type { LatLng, StartTourConfig } from './packages/engine/src';
 import type { PackRef } from './packages/storage/src/paths';
@@ -30,6 +30,8 @@ export default function App(): ReactElement {
     replayLastSegment,
     backgroundStatus,
     lastFixAtMs,
+    locationDeliveryStatus,
+    shareFieldDiagnostics,
   } = useTourEngine();
   const [activeRouteTitle, setActiveRouteTitle] = useState<string | null>(null);
   const [mapContext, setMapContext] = useState<MapPlaybackContext | null>(null);
@@ -102,6 +104,8 @@ export default function App(): ReactElement {
             lastFixAtMs={lastFixAtMs}
             poiNames={poiNames}
             routePolyline={routePolyline}
+            locationDeliveryStatus={locationDeliveryStatus}
+            onShareFieldDiagnostics={shareFieldDiagnostics}
           />
         );
       case 'Ended':
@@ -110,7 +114,15 @@ export default function App(): ReactElement {
             <Text style={styles.endedText} accessibilityRole="header">
               Tour ended
             </Text>
-            <Text style={styles.endedSubtext}>Returning to route selection…</Text>
+            <Text style={styles.endedSubtext}>Tour resources have been released.</Text>
+            <TouchableOpacity
+              style={styles.diagnosticsButton}
+              onPress={() => void shareFieldDiagnostics()}
+              accessibilityRole="button"
+              accessibilityLabel="Share field diagnostics"
+            >
+              <Text style={styles.diagnosticsButtonText}>Share diagnostics</Text>
+            </TouchableOpacity>
           </View>
         );
     }
@@ -144,5 +156,20 @@ const styles = StyleSheet.create({
   endedSubtext: {
     fontSize: 15,
     color: '#374151',
+  },
+  diagnosticsButton: {
+    minHeight: 44,
+    marginTop: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#6b7280',
+    borderRadius: 8,
+    justifyContent: 'center',
+  },
+  diagnosticsButtonText: {
+    color: '#374151',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

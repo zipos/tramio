@@ -45,6 +45,10 @@ export interface LocationAdapterEvents {
   }) => void;
   onGeofenceDwell: (poiId: string) => void;
   onPermissionDenied: () => void;
+  /** Every provider callback, before filtering. Coordinates are intentionally excluded. */
+  onDelivered?: (meta: { accuracyM: number | null }) => void;
+  /** A provider callback rejected by the pure pipeline. */
+  onRejected?: (meta: { reason: 'accuracy' | 'spike'; accuracyM: number | null }) => void;
 }
 
 export const LOCATION_TASK_NAME = 'tramio-location-updates';
@@ -92,6 +96,10 @@ function runOnMainThread(fn: () => void): void {
 function ingestLocation(loc: Location.LocationObject): void {
   if (session === null || !session.isActive()) return;
 
+  const boundSession = session;
+  const events = boundSession.events;
+  events.onDelivered?.({ accuracyM: loc.coords.accuracy ?? null });
+
   const raw: PositionUpdate = {
     ts: loc.timestamp,
     coord: [loc.coords.latitude, loc.coords.longitude],
@@ -100,8 +108,11 @@ function ingestLocation(loc: Location.LocationObject): void {
     ...(loc.coords.heading != null ? { headingDeg: loc.coords.heading } : {}),
   };
 
-  const out = step(session.pipeline, raw, raw.ts);
-  if (isRejected(out)) return;
+  const out = step(boundSession.pipeline, raw, raw.ts);
+  if (isRejected(out)) {
+    events.onRejected?.({ reason: out.reject, accuracyM: loc.coords.accuracy ?? null });
+    return;
+  }
 
   // BUG 5 FIX: after a fire, advance the consumed set and drop dwell entry
   // so the pipeline short-circuits that POI on subsequent fixes.
@@ -118,12 +129,11 @@ function ingestLocation(loc: Location.LocationObject): void {
     };
   }
 
-  session.pipeline = nextPipeline;
+  boundSession.pipeline = nextPipeline;
 
-  const events = session.events;
   const fire = out.fire;
   runOnMainThread(() => {
-    if (session === null || !session.isActive()) return;
+    if (session !== boundSession || !boundSession.isActive()) return;
     events.onAccepted({
       ts: raw.ts,
       coord: raw.coord,

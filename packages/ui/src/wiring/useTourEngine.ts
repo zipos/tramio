@@ -4,12 +4,20 @@
 //   - replayLastSegment: () => void  — re-speaks most recently played segment
 //   - backgroundStatus: { mode: 'background' | 'foreground-only'; reason?: string }
 //   - lastFixAtMs: number | null     — wall-clock ms of last accepted fix
+//   - locationDeliveryStatus: LocationDeliveryStatus — Wave 4 delivery health
+//   - shareFieldDiagnostics: () => Promise<void> — explicit share only
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Share } from 'react-native';
 import type { TourState } from '../../../engine/src';
 import { INITIAL_STATE } from '../../../engine/src';
 import type { StartTourConfig } from '../../../engine/src';
-import { TourRuntime, type BackgroundStatus, type SpeechStatus } from './TourRuntime';
+import {
+  TourRuntime,
+  type BackgroundStatus,
+  type SpeechStatus,
+  type LocationDeliveryStatus,
+} from './TourRuntime';
 import { ExpoAudioPlaybackAdapter } from './ExpoAudioPlaybackAdapter';
 import {
   resolveNarrativeCaption,
@@ -57,6 +65,16 @@ export interface UseTourEngineResult {
    * completely silent.
    */
   speechStatus: SpeechStatus;
+  /**
+   * Wave 4: GPS delivery health. Distinguishes "provider delivering but
+   * accuracy poor" from "provider completely silent (stalled)."
+   */
+  locationDeliveryStatus: LocationDeliveryStatus;
+  /**
+   * Wave 4: Share field diagnostics report via system share sheet.
+   * Only fires on explicit user press. Contains no coordinates or PII.
+   */
+  shareFieldDiagnostics: () => Promise<void>;
 }
 
 export function useTourEngine(): UseTourEngineResult {
@@ -70,6 +88,8 @@ export function useTourEngine(): UseTourEngineResult {
   });
   const [lastFixAtMs, setLastFixAtMs] = useState<number | null>(null);
   const [speechStatus, setSpeechStatus] = useState<SpeechStatus>({ available: true });
+  const [locationDeliveryStatus, setLocationDeliveryStatus] =
+    useState<LocationDeliveryStatus>('acquiring');
 
   if (runtimeRef.current === null) {
     runtimeRef.current = new TourRuntime({
@@ -96,12 +116,16 @@ export function useTourEngine(): UseTourEngineResult {
     const unsubSpeech = runtime.subscribeSpeechStatus((status) => {
       setSpeechStatus(status);
     });
+    const unsubDelivery = runtime.subscribeLocationDeliveryStatus((status) => {
+      setLocationDeliveryStatus(status);
+    });
     return () => {
       unsubState();
       unsubSpeed();
       unsubBg();
       unsubFix();
       unsubSpeech();
+      unsubDelivery();
     };
   }, []);
 
@@ -146,6 +170,16 @@ export function useTourEngine(): UseTourEngineResult {
     runtimeRef.current?.replayLastSegment();
   }, []);
 
+  const shareFieldDiagnostics = useCallback(async () => {
+    const report = runtimeRef.current?.getFieldDiagnosticsReport();
+    if (!report) return;
+    try {
+      await Share.share({ message: report });
+    } catch {
+      // User dismissed or Share is unavailable — do not crash.
+    }
+  }, []);
+
   const caption = resolveNarrativeCaption(getPlayingSegmentId(state), packNarrativesRef.current);
 
   return {
@@ -159,5 +193,7 @@ export function useTourEngine(): UseTourEngineResult {
     backgroundStatus,
     lastFixAtMs,
     speechStatus,
+    locationDeliveryStatus,
+    shareFieldDiagnostics,
   };
 }
