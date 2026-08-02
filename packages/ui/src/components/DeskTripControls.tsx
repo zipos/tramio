@@ -3,11 +3,11 @@
 
 import type { ReactElement } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { DESK_TRIP_SPEEDS } from '../wiring/deskDebug';
+import { DESK_TRIP_KMH_SPEEDS } from '../wiring/deskDebug';
 
 export interface DeskTripControlsProps {
   tripSpeed: number;
-  onTripSpeedChange: (speed: number) => void;
+  onTripSpeedChange: (speedKmh: number) => void;
   onSkipToNextPoi: () => void;
   replayComplete?: boolean;
 }
@@ -24,29 +24,33 @@ export function DeskTripControls({
       {replayComplete ? (
         <Text style={styles.hint}>Trace finished — position held. Next POI still works.</Text>
       ) : (
-        <Text style={styles.hint}>Next POI seeks GPS + audio. Trip speed is wall-clock.</Text>
+        <Text style={styles.hint}>
+          Next POI seeks forward along the route. Speed simulates real bus travel.
+        </Text>
       )}
       <TouchableOpacity
         style={styles.nextButton}
         onPress={onSkipToNextPoi}
         accessibilityRole="button"
-        accessibilityLabel="Skip to next POI"
+        accessibilityLabel="Skip to next POI ahead"
       >
         <Text style={styles.nextButtonText}>Next POI</Text>
       </TouchableOpacity>
       <View style={styles.speedRow}>
-        {DESK_TRIP_SPEEDS.map((speed) => {
-          const selected = speed === tripSpeed;
+        {DESK_TRIP_KMH_SPEEDS.map((speedKmh) => {
+          const selected = speedKmh === tripSpeed;
           return (
             <TouchableOpacity
-              key={speed}
+              key={speedKmh}
               style={[styles.speedButton, selected && styles.speedButtonSelected]}
-              onPress={() => onTripSpeedChange(speed)}
+              onPress={() => onTripSpeedChange(speedKmh)}
               accessibilityRole="button"
               accessibilityState={{ selected }}
-              accessibilityLabel={`Trip speed ${speed}x`}
+              accessibilityLabel={`Trip speed ${speedKmh} kilometers per hour`}
             >
-              <Text style={[styles.speedText, selected && styles.speedTextSelected]}>{speed}x</Text>
+              <Text style={[styles.speedText, selected && styles.speedTextSelected]}>
+                {speedKmh} km/h
+              </Text>
             </TouchableOpacity>
           );
         })}

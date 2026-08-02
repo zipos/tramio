@@ -7,16 +7,25 @@ import type { AcceptedUpdate, Geofence, LatLng, StartTourConfig } from '../../..
 import { projectOnRoute } from '../../../engine/src';
 import { buildWarsaw180DeskTrace } from './warsawDeskTrace';
 import {
+  BASE_TRACE_SPEED_KMH,
+  DESK_TRIP_KMH_SPEEDS,
   DESK_TRIP_SPEEDS,
   startGpsReplay,
-  type GpsReplayHandle,
+  type DeskTripKmhSpeed,
   type DeskTripSpeed,
+  type GpsReplayHandle,
 } from './gpsReplay';
 
 /** Compile-time desk/debug gate. Always true for dev & testing builds. */
 export const IS_DESK_DEBUG: boolean = true;
 
-export { DESK_TRIP_SPEEDS, type DeskTripSpeed };
+export {
+  BASE_TRACE_SPEED_KMH,
+  DESK_TRIP_KMH_SPEEDS,
+  DESK_TRIP_SPEEDS,
+  type DeskTripKmhSpeed,
+  type DeskTripSpeed,
+};
 
 export interface DeskDebugPorts {
   /** Feed a fix into the location adapter (replay or trusted snap). */
@@ -41,8 +50,9 @@ export interface DeskDebugPorts {
   triggerPoi: (poiId: string) => void;
   getPlayingSegmentId: () => string | null;
   getConsumed: () => ReadonlySet<string>;
+  getAlongRouteM?: () => number;
   getConfig: () => StartTourConfig | undefined;
-  onTripSpeedChange?: (speed: number) => void;
+  onTripSpeedChange?: (speedKmh: number) => void;
   onReplayComplete?: () => void;
   noteFixWallClock?: () => void;
 }
@@ -50,9 +60,9 @@ export interface DeskDebugPorts {
 export interface DeskDebugSession {
   start(opts?: { speedMultiplier?: number; poiCount?: number }): void;
   stop(): void;
-  setTripSpeed(speed: number): void;
+  setTripSpeed(speedKmh: number): void;
   getTripSpeed(): number;
-  /** Skip audio + seek GPS cursor + snap rider to next POI. */
+  /** Skip audio + seek GPS cursor + snap rider to next POI ahead on the route. */
   skipToNextPoi(): boolean;
   isActive(): boolean;
   isReplayComplete(): boolean;
@@ -65,7 +75,7 @@ export function createDeskDebugSession(ports: DeskDebugPorts): DeskDebugSession 
   if (!IS_DESK_DEBUG) return null;
 
   let handle: GpsReplayHandle | null = null;
-  let tripSpeed = 4;
+  let tripSpeedKmh = 30; // Default 30 km/h (standard Warsaw bus speed)
   let active = false;
 
   const snapRider = (coord: LatLng, route: readonly LatLng[]): void => {
@@ -99,25 +109,36 @@ export function createDeskDebugSession(ports: DeskDebugPorts): DeskDebugSession 
   return {
     start(opts) {
       if (active) this.stop();
-      tripSpeed = opts?.speedMultiplier ?? 4;
+      // Calculate multiplier from requested speed in km/h relative to base trace speed (28.8 km/h).
+      const rawMultiplier = opts?.speedMultiplier;
+      if (rawMultiplier != null) {
+        // If passed a multiplier directly (e.g. 1.0, 2.0), translate to km/h or use directly
+        tripSpeedKmh =
+          rawMultiplier > 5 ? rawMultiplier : Math.round(rawMultiplier * BASE_TRACE_SPEED_KMH);
+      } else {
+        tripSpeedKmh = 30;
+      }
+
+      const speedMultiplier = tripSpeedKmh / BASE_TRACE_SPEED_KMH;
+
       const fixes = buildWarsaw180DeskTrace(
         opts?.poiCount != null ? { poiCount: opts.poiCount } : undefined,
       );
       handle = startGpsReplay({
         fixes,
-        speedMultiplier: tripSpeed,
+        speedMultiplier,
         onFix: (loc) => {
           ports.injectFix(loc);
           ports.noteFixWallClock?.();
         },
         onComplete: () => ports.onReplayComplete?.(),
         onSpeedChange: (mult) => {
-          tripSpeed = mult;
-          ports.onTripSpeedChange?.(mult);
+          tripSpeedKmh = Math.round(mult * BASE_TRACE_SPEED_KMH);
+          ports.onTripSpeedChange?.(tripSpeedKmh);
         },
       });
       active = true;
-      ports.onTripSpeedChange?.(tripSpeed);
+      ports.onTripSpeedChange?.(tripSpeedKmh);
     },
 
     stop() {
@@ -126,22 +147,32 @@ export function createDeskDebugSession(ports: DeskDebugPorts): DeskDebugSession 
       active = false;
     },
 
-    setTripSpeed(speed: number) {
-      tripSpeed = Math.max(0.25, speed);
-      handle?.setSpeedMultiplier(tripSpeed);
-      ports.onTripSpeedChange?.(tripSpeed);
+    setTripSpeed(speedKmh: number) {
+      tripSpeedKmh = Math.max(5, speedKmh);
+      const mult = tripSpeedKmh / BASE_TRACE_SPEED_KMH;
+      handle?.setSpeedMultiplier(mult);
+      ports.onTripSpeedChange?.(tripSpeedKmh);
     },
 
     getTripSpeed() {
-      return tripSpeed;
+      return tripSpeedKmh;
     },
 
     skipToNextPoi() {
       const config = ports.getConfig();
       if (!config) return false;
 
+      const currentAlongRouteM = ports.getAlongRouteM?.() ?? 0;
       const consumed = ports.getConsumed();
-      const next = config.geofences.find((g) => !consumed.has(g.poiId));
+
+      // FIX: Find the nearest POI strictly AHEAD of current along-route distance (+5m threshold).
+      // This prevents jumping backwards to a previously skipped POI!
+      const next = config.geofences.find((g) => {
+        if (g.geometry.kind !== 'circle') return false;
+        const proj = projectOnRoute(config.route, g.geometry.center);
+        return proj.alongRouteM > currentAlongRouteM + 5 && !consumed.has(g.poiId);
+      });
+
       if (!next || next.geometry.kind !== 'circle') return false;
 
       const center = next.geometry.center;

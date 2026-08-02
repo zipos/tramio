@@ -328,5 +328,9 @@ function bearingDeg(a: LatLng, b: LatLng): number {
   return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
 
-export const DESK_TRIP_SPEEDS = [1, 2, 4, 8] as const;
+export const BASE_TRACE_SPEED_KMH = 28.8;
+export const DESK_TRIP_KMH_SPEEDS = [15, 30, 45, 60] as const;
+export type DeskTripKmhSpeed = (typeof DESK_TRIP_KMH_SPEEDS)[number];
+/** Legacy multiplier list for backward compatibility. */
+export const DESK_TRIP_SPEEDS = [15, 30, 45, 60] as const;
 export type DeskTripSpeed = (typeof DESK_TRIP_SPEEDS)[number];

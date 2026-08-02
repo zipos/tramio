@@ -27,7 +27,7 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { AppState, type NativeEventSubscription } from 'react-native';
 
 import type { EngineCommand, EngineEvent, TourState, StartTourConfig } from '../../../engine/src';
-import { INITIAL_STATE, reduce } from '../../../engine/src';
+import { INITIAL_STATE, reduce, projectOnRoute } from '../../../engine/src';
 import { LocationAdapter, type LocationDeliveryStatus } from './locationAdapter';
 import { DEFAULT_PLAYBACK_SPEED, type PlaybackSpeed } from './playbackSpeed';
 import { configureTourAudioSession, releaseTourAudioSession } from './audioSession';
@@ -471,7 +471,12 @@ export class TourRuntime {
         ? this.state.session
         : null;
     if (!session) return;
-    const next = this.config.geofences.find((g) => !session.consumed.has(g.poiId));
+    const currentAlongRouteM = session.lastAccepted?.alongRouteM ?? 0;
+    const next = this.config.geofences.find((g) => {
+      if (g.geometry.kind !== 'circle') return false;
+      const proj = projectOnRoute(this.config!.route, g.geometry.center);
+      return proj.alongRouteM > currentAlongRouteM + 5 && !session.consumed.has(g.poiId);
+    });
     if (!next) return;
     this.dispatch({ kind: 'GeofenceDwell', poiId: next.poiId });
   }
@@ -1071,6 +1076,16 @@ export class TourRuntime {
             ? this.state.session
             : null;
         return s?.consumed ?? new Set();
+      },
+      getAlongRouteM: () => {
+        const s =
+          this.state.phase === 'Active' ||
+          this.state.phase === 'Standby' ||
+          this.state.phase === 'DeadReckoning' ||
+          this.state.phase === 'Deviation'
+            ? this.state.session
+            : null;
+        return s?.lastAccepted?.alongRouteM ?? 0;
       },
       getConfig: () => this.config,
       onTripSpeedChange: (mult) => {
