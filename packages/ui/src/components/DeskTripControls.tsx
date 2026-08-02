@@ -19,13 +19,13 @@ interface PresetOption {
 }
 
 const PRESET_OPTIONS: readonly PresetOption[] = [
-  { kmh: 18, label: '18 km/h', desc: 'Tram' },
-  { kmh: 21, label: '21 km/h', desc: 'Bus Avg' },
-  { kmh: 26, label: '26 km/h', desc: 'Express' },
-  { kmh: 35, label: '35 km/h', desc: 'Metro' },
-  { kmh: 60, label: '60 km/h', desc: 'Corridor' },
-  { kmh: 100, label: '100 km/h', desc: 'High-Speed' },
-  { kmh: 300, label: '300 km/h', desc: 'Benchmark' },
+  { kmh: 18, label: '18', desc: 'Tram' },
+  { kmh: 21, label: '21', desc: 'Bus' },
+  { kmh: 26, label: '26', desc: 'Expr' },
+  { kmh: 35, label: '35', desc: 'Metro' },
+  { kmh: 60, label: '60', desc: 'Fast' },
+  { kmh: 100, label: '100', desc: 'HSR' },
+  { kmh: 300, label: '300', desc: 'Bullet' },
 ];
 
 const MIN_SPEED = 10;
@@ -39,9 +39,9 @@ function speedToRatio(speed: number): number {
 function ratioToSpeed(ratio: number): number {
   const r = Math.max(0, Math.min(1, ratio));
   const raw = MIN_SPEED * Math.pow(MAX_SPEED / MIN_SPEED, r);
-  // Snap to preset if close (<4% difference)
+  // Snap to preset if close (<5% difference)
   for (const preset of PRESET_OPTIONS) {
-    if (Math.abs(raw - preset.kmh) / preset.kmh < 0.06) {
+    if (Math.abs(raw - preset.kmh) / preset.kmh < 0.05) {
       return preset.kmh;
     }
   }
@@ -54,21 +54,31 @@ export function DeskTripControls({
   onSkipToNextPoi,
   replayComplete = false,
 }: DeskTripControlsProps): ReactElement {
+  const trackRef = useRef<View>(null);
+  const trackPageXRef = useRef<number>(0);
   const trackWidthRef = useRef<number>(300);
+
+  const updateSpeedFromPageX = (pageX: number) => {
+    const relativeX = pageX - trackPageXRef.current;
+    const ratio = Math.max(0, Math.min(1, relativeX / Math.max(1, trackWidthRef.current)));
+    onTripSpeedChange(ratioToSpeed(ratio));
+  };
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt) => {
-        const x = evt.nativeEvent.locationX;
-        const ratio = x / Math.max(1, trackWidthRef.current);
-        onTripSpeedChange(ratioToSpeed(ratio));
+        trackRef.current?.measureInWindow((x, _y, w) => {
+          if (w > 0) {
+            trackPageXRef.current = x;
+            trackWidthRef.current = w;
+          }
+          updateSpeedFromPageX(evt.nativeEvent.pageX);
+        });
       },
       onPanResponderMove: (evt) => {
-        const x = evt.nativeEvent.locationX;
-        const ratio = x / Math.max(1, trackWidthRef.current);
-        onTripSpeedChange(ratioToSpeed(ratio));
+        updateSpeedFromPageX(evt.nativeEvent.pageX);
       },
     }),
   ).current;
@@ -79,7 +89,7 @@ export function DeskTripControls({
   return (
     <View style={styles.card} accessibilityLabel="Desk debug trip controls">
       <View style={styles.headerRow}>
-        <Text style={styles.title}>Desk debug (Test Bench)</Text>
+        <Text style={styles.title}>Desk debug</Text>
         <Text style={styles.speedBadge}>
           {tripSpeed} km/h {activePreset ? `(${activePreset.desc})` : ''}
         </Text>
@@ -89,7 +99,7 @@ export function DeskTripControls({
         <Text style={styles.hint}>Trace finished — position held. Next POI still works.</Text>
       ) : (
         <Text style={styles.hint}>
-          Next POI seeks forward along the route. Speed slider is logarithmic up to 300 km/h.
+          Next POI seeks forward along the route. Speed slider smoothly adjusts up to 300 km/h.
         </Text>
       )}
 
@@ -102,7 +112,7 @@ export function DeskTripControls({
         <Text style={styles.nextButtonText}>Next POI</Text>
       </TouchableOpacity>
 
-      {/* Preset Chips */}
+      {/* Preset Chips — 1 Single Row */}
       <View style={styles.presetRow}>
         {PRESET_OPTIONS.map((opt) => {
           const selected = opt.kmh === tripSpeed;
@@ -116,7 +126,7 @@ export function DeskTripControls({
               accessibilityLabel={`Set trip speed to ${opt.kmh} km/h (${opt.desc})`}
             >
               <Text style={[styles.presetText, selected && styles.presetTextSelected]}>
-                {opt.kmh}
+                {opt.label}
               </Text>
               <Text style={[styles.presetSubtext, selected && styles.presetSubtextSelected]}>
                 {opt.desc}
@@ -128,11 +138,14 @@ export function DeskTripControls({
 
       {/* Logarithmic Speed Slider */}
       <View style={styles.sliderContainer}>
-        <Text style={styles.sliderLabel}>Logarithmic Speed Slider (10 - 300 km/h)</Text>
         <View
+          ref={trackRef}
           style={styles.sliderTrack}
           onLayout={(e) => {
             trackWidthRef.current = e.nativeEvent.layout.width;
+            trackRef.current?.measureInWindow((x) => {
+              if (x > 0) trackPageXRef.current = x;
+            });
           }}
           {...panResponder.panHandlers}
         >
@@ -155,12 +168,12 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 420,
     marginBottom: 16,
-    padding: 14,
+    padding: 12,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#fcd34d',
     backgroundColor: '#fffbeb',
-    gap: 10,
+    gap: 8,
   },
   headerRow: {
     flexDirection: 'row',
@@ -182,17 +195,17 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   hint: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#a16207',
-    lineHeight: 16,
+    lineHeight: 15,
   },
   nextButton: {
     backgroundColor: '#d97706',
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 8,
     alignItems: 'center',
-    minHeight: 44,
+    minHeight: 42,
     justifyContent: 'center',
   },
   nextButtonText: {
@@ -202,16 +215,15 @@ const styles = StyleSheet.create({
   },
   presetRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 4,
+    justifyContent: 'space-between',
+    gap: 4,
+    marginTop: 2,
   },
   presetButton: {
     flex: 1,
-    minWidth: 46,
-    minHeight: 44,
+    minHeight: 40,
     paddingVertical: 4,
-    paddingHorizontal: 6,
+    paddingHorizontal: 2,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#f59e0b',
@@ -224,7 +236,7 @@ const styles = StyleSheet.create({
     borderColor: '#b45309',
   },
   presetText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: '#92400e',
   },
@@ -240,16 +252,11 @@ const styles = StyleSheet.create({
     color: '#fef3c7',
   },
   sliderContainer: {
-    marginTop: 4,
-    gap: 6,
-  },
-  sliderLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#a16207',
+    marginTop: 2,
+    gap: 4,
   },
   sliderTrack: {
-    height: 36,
+    height: 32,
     backgroundColor: '#fde68a',
     borderRadius: 8,
     justifyContent: 'center',
@@ -267,7 +274,7 @@ const styles = StyleSheet.create({
   sliderThumb: {
     position: 'absolute',
     width: 14,
-    height: 36,
+    height: 32,
     marginLeft: -7,
     backgroundColor: '#92400e',
     borderRadius: 4,
@@ -277,7 +284,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   tickText: {
-    fontSize: 10,
+    fontSize: 9,
     color: '#a16207',
   },
 });
