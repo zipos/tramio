@@ -103,9 +103,10 @@ for these exist; the logic is stubbed/partial.
 
 ### Map (`packages/map/src/`)
 
-- `OfflineMap.tsx` — MapLibre GL Native component, offline-only tile source from `file://` paths
+- `OfflineMap.tsx` — MapLibre GL Native component, offline-only tile source from `file://` paths; renders route polyline, POI markers (ahead / next / consumed), rider position, camera follow + Recenter, static OSM attribution
 - `tileSource.ts` — Resolves `{bundleId, version}` → `file://.../tiles/{z}/{x}/{y}.pbf`
-- `types.ts` — Declares `route`, `pois` (with consumed flag), and `userPosition` overlay props (typed but not yet rendered in OfflineMap.tsx)
+- `geo.ts` — lat/lon ↔ GeoJSON helpers for overlays
+- `types.ts` — `route`, `pois` (with consumed/highlight), and `userPosition` overlay props
 
 ### Capability (`packages/capability/src/`)
 
@@ -405,8 +406,8 @@ timers to validate these scenarios deterministically without a device.
 > **Product / field-ride backlog:** [docs/field-ride-backlog.md](docs/field-ride-backlog.md)
 > parks voice, corridor POIs, map/UI, rename, interests, draft agents, Live
 > Activities, and related notes so they survive context-limited sessions.
-> **Current engineering focus:** location battery optimization + Poco desk GPS
-> replay (`__DEV__` button on route select). `simulate:180` is a CI gate only.
+> **Current engineering focus:** map overlays + desk replay are in; next is
+> voice bake / real corridor tiles / full-route field calibration.
 
 1. **Full-route field test bus 180 northbound end to end** — ride Wilanów → Żoliborz with
    the screen locked and log which of the 24 POIs fire. Initial 3-stop physical test ride passed; full 24-POI ride remains for final calibration.
@@ -423,13 +424,11 @@ timers to validate these scenarios deterministically without a device.
    as a separate bundle with its own narratives.
 5. **Real vector tiles** — replace the placeholder `.pbf` in the dev pack with
    an OSM corridor extract (tippecanoe / Planetiler) buffered along the 180
-   alignment.
-6. **Map overlays** — `OfflineMapProps` already declares `route`, `pois`, and
-   `userPosition` props, but `OfflineMap.tsx` does not render them yet. Wire
-   the ShapeSource/LineLayer and SymbolLayer/CircleLayer so the playback screen
-   shows a GPS dot + route + POI markers.
-7. **OSM attribution overlay** — a persistent overlay component on every
-   MapLibre view (task 10.2); currently missing.
+   alignment. Overlays already render without tiles.
+6. **Map overlays** — ✅ Done. `OfflineMap` renders route LineLayer, POI CircleLayers
+   (ahead / next / consumed), rider position, camera follow + Recenter, and a static
+   © OpenStreetMap attribution label (no network). Playback screen wires live tour state.
+7. **OSM attribution overlay** — ✅ Done (static in-map label; MapLibre built-in attribution stays off during tours).
 8. **Pre-rendered audio** — ✅ **Done (Wave 3).** The engine's `selectAudioSource()` fallback chain
    is now wired end-to-end: pack loader verifies audio files against the signed lock,
    builds a `MediaCatalog`, and the reducer dispatches `PlaySegment` with `source: 'audio'`

@@ -16,8 +16,9 @@ import {
   type GpsReplayHandle,
 } from './gpsReplay';
 
-/** Compile-time desk/debug gate. Always true for dev & testing builds. */
-export const IS_DESK_DEBUG: boolean = true;
+/** Compile-time desk/debug gate. False in production Metro bundles. */
+export const IS_DESK_DEBUG: boolean =
+  typeof __DEV__ !== 'undefined' ? __DEV__ : process.env.NODE_ENV !== 'production';
 
 export {
   BASE_TRACE_SPEED_KMH,

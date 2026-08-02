@@ -12,4 +12,10 @@
 
 export { OfflineMap } from './OfflineMap';
 export { resolveOfflineTileSource, buildOfflineStyle } from './tileSource';
-export type { OfflineMapProps, TilePackRef, ResolvedTileSource } from './types';
+export {
+  latLonToGeoJSON,
+  routeToLineStringFeature,
+  positionToPointFeature,
+  poisToFeatureCollection,
+} from './geo';
+export type { OfflineMapProps, TilePackRef, ResolvedTileSource, PoiMarker } from './types';

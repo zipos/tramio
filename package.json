@@ -7,6 +7,9 @@
   "scripts": {
     "start": "expo start --dev-client",
     "android": "expo run:android",
+    "build:apk": "cd android && ANDROID_HOME=$HOME/Library/Android/sdk ./gradlew assembleRelease -x lint -PreactNativeArchitectures=arm64-v8a",
+    "install:apk": "$HOME/Library/Android/sdk/platform-tools/adb install -r android/app/build/outputs/apk/release/app-release.apk",
+    "deploy": "npm run build:apk && npm run install:apk && $HOME/Library/Android/sdk/platform-tools/adb shell monkey -p app.tramio.client -c android.intent.category.LAUNCHER 1",
     "ios": "expo run:ios",
     "prebuild": "expo prebuild",
     "prebuild:clean": "expo prebuild --clean",

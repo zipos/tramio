@@ -14,7 +14,7 @@ import type { ReactElement } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { LatLng, TourState } from '../../../engine/src';
 import { OfflineMap } from '../../../map/src';
-import type { TilePackRef } from '../../../map/src';
+import type { PoiMarker, TilePackRef } from '../../../map/src';
 import {
   PLAYBACK_SPEEDS,
   formatPlaybackSpeedLabel,
@@ -26,7 +26,9 @@ import { NextPoiIndicator } from '../components/NextPoiIndicator';
 import { BackgroundBanner } from '../components/BackgroundBanner';
 import { MidRouteBoardingNotice } from '../components/MidRouteBoardingNotice';
 import { GpsDeliveryBanner } from '../components/GpsDeliveryBanner';
+import { RoutePolylinePreview } from '../components/RoutePolylinePreview';
 import type { LocationDeliveryStatus } from '../wiring/TourRuntime';
+import type { DemoPoi } from '../wiring/demoRoute';
 import {
   detectMidRouteBoarding,
   findNextPoi,
@@ -176,6 +178,39 @@ export function TourPlaybackScreen({
   const showCaption = caption !== null && caption !== '';
   const showBackgroundBanner = backgroundStatus.mode === 'foreground-only';
 
+  const mapPois: PoiMarker[] = useMemo(() => {
+    if (!geofences) return [];
+    return geofences.flatMap((g) => {
+      if (g.geometry.kind !== 'circle') return [];
+      return [
+        {
+          poiId: g.poiId,
+          center: g.geometry.center,
+          radiusMeters: g.geometry.radiusMeters,
+          consumed: consumed.has(g.poiId),
+          highlight: nextPoi?.poiId === g.poiId,
+        },
+      ];
+    });
+  }, [geofences, consumed, nextPoi?.poiId]);
+
+  const fallbackPreviewPois: DemoPoi[] = useMemo(
+    () =>
+      mapPois.map((p) => ({
+        poiId: p.poiId,
+        label: poiNames.get(p.poiId) ?? p.poiId,
+      })),
+    [mapPois, poiNames],
+  );
+
+  const fallbackPoiCenters = useMemo(() => {
+    const m = new Map<string, LatLng>();
+    for (const p of mapPois) m.set(p.poiId, p.center);
+    return m;
+  }, [mapPois]);
+
+  const mapCenter = riderCoord ?? mapContext?.initialCenter ?? routePolyline[0];
+
   return (
     <ScrollView contentContainerStyle={styles.scrollContent}>
       <Text style={styles.title} accessibilityRole="header">
@@ -209,9 +244,28 @@ export function TourPlaybackScreen({
           <OfflineMap
             docsDir={mapContext.docsDir}
             tilePack={mapContext.tilePack}
-            {...(mapContext.initialCenter ? { initialCenter: mapContext.initialCenter } : {})}
+            {...(mapCenter ? { initialCenter: mapCenter } : {})}
+            {...(routePolyline.length >= 2 ? { route: routePolyline } : {})}
+            pois={mapPois}
+            {...(riderCoord ? { userPosition: riderCoord } : {})}
+            initialZoom={15}
             style={styles.map}
           />
+        </View>
+      ) : routePolyline.length >= 2 ? (
+        <View style={styles.mapCard}>
+          <RoutePolylinePreview
+            route={routePolyline}
+            pois={fallbackPreviewPois}
+            poiCenters={fallbackPoiCenters}
+          />
+          <Text style={styles.mapHint} accessibilityLiveRegion="polite">
+            {riderCoord
+              ? `Rider on route · next: ${
+                  nextPoi ? `${nextPoi.name} (${formattedDistance})` : 'end of tour'
+                }`
+              : 'Waiting for GPS…'}
+          </Text>
         </View>
       ) : null}
 
@@ -368,9 +422,15 @@ const styles = StyleSheet.create({
   },
   map: {
     width: '100%',
-    height: 200,
+    height: 280,
     borderRadius: 12,
     overflow: 'hidden',
+  },
+  mapHint: {
+    marginTop: 8,
+    fontSize: 13,
+    color: '#4b5563',
+    textAlign: 'center',
   },
   statusCard: {
     width: '100%',

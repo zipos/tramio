@@ -1,4 +1,4 @@
 {
-  "signature": "f9Glw64d6o9BVqj1BtCOG3bRgrJENEU91FdDfR7lhUq3TWEcd6kzlmFpvSiNQWZTvM4qyFknqi-KPhenNa40Bw",
+  "signature": "C5i_v--AHCwi1TkKzrMo5KyGT6usDW7vRVEjOghlzfirc6D5FAWWFhGFq1dWomiLluKmuw6CJrgYEqCSbSblCQ",
   "kid": "cat-001"
 }

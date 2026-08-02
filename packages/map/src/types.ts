@@ -32,6 +32,8 @@ export interface PoiMarker {
   center: readonly [number, number];
   radiusMeters: number;
   consumed?: boolean;
+  /** Emphasize the next landmark ahead. */
+  highlight?: boolean;
 }
 
 /**

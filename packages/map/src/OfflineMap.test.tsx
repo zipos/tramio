@@ -4,17 +4,12 @@
  * Validates:
  * - Component renders with offline tile source (Req 4.1)
  * - No external URLs in the generated style (Req 3.2, 4.4)
- * - Correct tile path resolution from bundleId/version props
+ * - Route / POI / user overlays mount when provided
  * - onMapReady callback fires
- *
- * @see Requirements 3.2, 4.1, 4.4
  */
 
 import React from 'react';
 import { create, act } from 'react-test-renderer';
-
-// @maplibre/maplibre-react-native is resolved via moduleNameMapper in jest.config.js
-// to src/__mocks__/maplibre-react-native.ts
 
 import { OfflineMap } from './OfflineMap';
 
@@ -32,7 +27,7 @@ describe('OfflineMap', () => {
     expect(tree?.toJSON()).toBeTruthy();
   });
 
-  it('passes a styleJSON with no external URLs to MapView', () => {
+  it('passes a mapStyle with no external URLs to MapView', () => {
     let tree: ReturnType<typeof create> | undefined;
     act(() => {
       tree = create(<OfflineMap {...defaultProps} />);
@@ -40,11 +35,10 @@ describe('OfflineMap', () => {
 
     const root = tree!.root;
     const mapView = root.findByProps({ testID: 'maplibre-mapview' });
-    const styleJSON = mapView.props.styleJSON as string;
+    const mapStyle = mapView.props.mapStyle as Record<string, unknown>;
+    const styleJSON = JSON.stringify(mapStyle);
 
-    // Parse the style and verify no http/https URLs
     expect(styleJSON).not.toMatch(/https?:\/\//);
-    // Verify it contains the correct file:// path
     expect(styleJSON).toContain('file:///data/docs/packs/wroclaw-tram-7-east/1.4.2/tiles/');
   });
 
@@ -56,7 +50,7 @@ describe('OfflineMap', () => {
 
     const root = tree!.root;
     const mapView = root.findByProps({ testID: 'maplibre-mapview' });
-    const styleJSON = mapView.props.styleJSON as string;
+    const styleJSON = JSON.stringify(mapView.props.mapStyle);
 
     expect(styleJSON.toLowerCase()).not.toContain('google');
     expect(styleJSON.toLowerCase()).not.toContain('mapkit');
@@ -85,7 +79,7 @@ describe('OfflineMap', () => {
 
     const root = tree!.root;
     const mapView = root.findByProps({ testID: 'maplibre-mapview' });
-    const styleJSON = mapView.props.styleJSON as string;
+    const styleJSON = JSON.stringify(mapView.props.mapStyle);
 
     expect(styleJSON).toContain(
       'file:///app/documents/packs/berlin-bus-100/2.1.0/tiles/{z}/{x}/{y}.pbf',
@@ -105,8 +99,7 @@ describe('OfflineMap', () => {
 
     const root = tree!.root;
     const mapView = root.findByProps({ testID: 'maplibre-mapview' });
-    const styleJSON = mapView.props.styleJSON as string;
-    const parsed = JSON.parse(styleJSON);
+    const parsed = mapView.props.mapStyle as { sources: unknown; layers: unknown };
 
     expect(parsed.sources).toEqual({});
     expect(parsed.layers).toEqual([]);
@@ -123,7 +116,7 @@ describe('OfflineMap', () => {
     expect(json.props.accessibilityLabel).toBe('Offline map view');
   });
 
-  it('disables telemetry on MapView (no outbound requests)', () => {
+  it('disables built-in attribution on MapView (static overlay instead)', () => {
     let tree: ReturnType<typeof create> | undefined;
     act(() => {
       tree = create(<OfflineMap {...defaultProps} />);
@@ -131,6 +124,44 @@ describe('OfflineMap', () => {
 
     const root = tree!.root;
     const mapView = root.findByProps({ testID: 'maplibre-mapview' });
-    expect(mapView.props.telemetryEnabled).toBe(false);
+    expect(mapView.props.attributionEnabled).toBe(false);
+  });
+
+  it('renders route, POI, and user ShapeSources when overlays are provided', () => {
+    let tree: ReturnType<typeof create> | undefined;
+    act(() => {
+      tree = create(
+        <OfflineMap
+          {...defaultProps}
+          route={[
+            [52.23, 21.01],
+            [52.24, 21.02],
+          ]}
+          pois={[
+            {
+              poiId: 'poi-a',
+              center: [52.235, 21.015],
+              radiusMeters: 40,
+              highlight: true,
+            },
+            {
+              poiId: 'poi-b',
+              center: [52.238, 21.018],
+              radiusMeters: 40,
+              consumed: true,
+            },
+          ]}
+          userPosition={[52.232, 21.012]}
+        />,
+      );
+    });
+
+    const root = tree!.root;
+    expect(root.findByProps({ testID: 'maplibre-shapesource-tramio-route' })).toBeTruthy();
+    expect(root.findByProps({ testID: 'maplibre-shapesource-tramio-pois' })).toBeTruthy();
+    expect(root.findByProps({ testID: 'maplibre-shapesource-tramio-user' })).toBeTruthy();
+    expect(root.findByProps({ testID: 'maplibre-linelayer-tramio-route-line' })).toBeTruthy();
+    expect(root.findByProps({ testID: 'maplibre-circlelayer-tramio-pois-next' })).toBeTruthy();
+    expect(root.findByProps({ testID: 'maplibre-circlelayer-tramio-user-dot' })).toBeTruthy();
   });
 });

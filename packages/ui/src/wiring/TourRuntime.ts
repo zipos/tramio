@@ -151,7 +151,7 @@ export class TourRuntime {
   private deskDebug: DeskDebugSession | null = null;
   private deskReplayComplete = false;
   private tourKeepAwakeActive = false;
-  private deskReplaySpeed = 4;
+  private deskReplaySpeed = 21;
   private deskReplaySpeedListeners = new Set<(speed: number) => void>();
   private deskReplayCompleteListeners = new Set<(complete: boolean) => void>();
   /** Consecutive accuracy rejects since last accept — drives poorAccuracy banner. */
@@ -232,7 +232,7 @@ export class TourRuntime {
     this.stopDeskDebug();
     this.accuracyRejectStreak = 0;
     this.setPoorAccuracy(false);
-    this.deskReplaySpeed = options?.deskReplaySpeedMultiplier ?? 4;
+    this.deskReplaySpeed = options?.deskReplaySpeedMultiplier ?? 21;
     this.setDeskReplayComplete(false);
     for (const listener of this.deskReplaySpeedListeners) listener(this.deskReplaySpeed);
 
@@ -434,10 +434,10 @@ export class TourRuntime {
     };
   }
 
-  /** `__DEV__` desk control: change GPS trace wall-clock multiplier. */
-  setDeskReplaySpeed(speed: number): void {
+  /** `__DEV__` desk control: change GPS trace speed in km/h. */
+  setDeskReplaySpeed(speedKmh: number): void {
     if (!IS_DESK_DEBUG) return;
-    const next = Math.max(0.25, speed);
+    const next = Math.max(5, Math.min(300, speedKmh));
     this.deskReplaySpeed = next;
     this.deskDebug?.setTripSpeed(next);
     for (const listener of this.deskReplaySpeedListeners) listener(next);

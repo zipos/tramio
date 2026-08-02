@@ -112,7 +112,7 @@ export function useTourEngine(): UseTourEngineResult {
   const [locationDeliveryStatus, setLocationDeliveryStatus] =
     useState<LocationDeliveryStatus>('acquiring');
   const [poorAccuracy, setPoorAccuracy] = useState(false);
-  const [deskReplaySpeed, setDeskReplaySpeedState] = useState(4);
+  const [deskReplaySpeed, setDeskReplaySpeedState] = useState(21);
   const [isDeskGpsReplayActive, setIsDeskGpsReplayActive] = useState(false);
   const [deskReplayComplete, setDeskReplayComplete] = useState(false);
 
@@ -204,7 +204,7 @@ export function useTourEngine(): UseTourEngineResult {
         : {}),
     });
     setIsDeskGpsReplayActive(deskReplayEnabled);
-    setDeskReplaySpeedState(options?.deskReplaySpeedMultiplier ?? 4);
+    setDeskReplaySpeedState(options?.deskReplaySpeedMultiplier ?? 21);
     setDeskReplayComplete(false);
   }, []);
 

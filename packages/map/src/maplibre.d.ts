@@ -1,8 +1,7 @@
 /**
  * Type declarations for @maplibre/maplibre-react-native.
  *
- * This is a minimal declaration covering only the API surface used by
- * the @tramio/map package. The full types ship with the actual package
+ * Minimal surface used by @tramio/map. Full types ship with the package
  * when installed as a peer dependency in the app.
  */
 
@@ -10,15 +9,22 @@ declare module '@maplibre/maplibre-react-native' {
   import type { ComponentType } from 'react';
   import type { ViewStyle } from 'react-native';
 
+  interface RegionPayload {
+    zoomLevel: number;
+    heading: number;
+    animated: boolean;
+    isUserInteraction: boolean;
+    pitch: number;
+  }
+
   interface MapViewProps {
     style?: ViewStyle;
-    styleJSON?: string;
-    styleURL?: string;
+    mapStyle?: string | Record<string, unknown>;
     logoEnabled?: boolean;
     attributionEnabled?: boolean;
-    telemetryEnabled?: boolean;
+    compassEnabled?: boolean;
     onDidFinishLoadingMap?: () => void;
-    onRegionDidChange?: () => void;
+    onRegionDidChange?: (feature: GeoJSON.Feature<GeoJSON.Point, RegionPayload>) => void;
     children?: React.ReactNode;
   }
 

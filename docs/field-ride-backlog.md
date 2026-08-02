@@ -69,15 +69,16 @@ See [HANDOFF.md](../HANDOFF.md) “Suggested Next Steps”: full-route field cal
 
 ## Sequencing reminder (after current focus)
 
-1. Voice bake-off + pre-render hero 180 segments
-2. Map overlays + real tiles
-3. Corridor POI pass (embassy stretch) → then GTFS shapes
-4. DB-on-close fix from screenshot
-5. Interest tags + density + onboarding
-6. Rename when shortlist ready
-7. Draft agent behind fact-check gate → London/Stockholm
-8. Live Activities
-9. LLM drill-down / car corridor mode
+1. ~~Map overlays + ride map UI~~ (route / POIs / rider wired; real corridor tiles still TODO)
+2. Voice bake-off + pre-render hero 180 segments
+3. Real corridor vector tiles (replace placeholder `.pbf`)
+4. Corridor POI pass (embassy stretch) → then GTFS shapes
+5. DB-on-close fix from screenshot
+6. Interest tags + density + onboarding
+7. Rename when shortlist ready
+8. Draft agent behind fact-check gate → London/Stockholm
+9. Live Activities
+10. LLM drill-down / car corridor mode
 
 ## Source notes (essence)
 

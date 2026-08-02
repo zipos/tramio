@@ -139,14 +139,14 @@ const NARRATIVES: Record<string, string> = {
     'Ordynacka. This is the unofficial centre of going out in Warsaw — no pretension, no guest lists. If that is your evening, get off and walk left, towards Marszałkowska. A few minutes further north there is also a change to the M2 metro line.',
 
   'poi-uniwersytet:pl':
-    'Po lewej brama główna Uniwersytetu Warszawskiego i kampus schowany za nią — pałac, w którym uczelnia mieszka od dwustu lat. Studenci wysiadają tu tysiącami, ale nie w sierpniu.',
+    'Po prawej brama główna Uniwersytetu Warszawskiego i kampus schowany za nią — pałac, w którym uczelnia mieszka od dwustu lat. Studenci wysiadają tu tysiącami, ale nie w sierpniu.',
   'poi-uniwersytet:en':
-    'On your left, the main gate of the University of Warsaw and the campus hidden behind it — a palace the university has occupied for two centuries. Students pour out here by the thousand, though not in August.',
+    'On your right, the main gate of the University of Warsaw and the campus hidden behind it — a palace the university has occupied for two centuries. Students pour out here by the thousand, though not in August.',
 
   'poi-bristol:pl':
-    'Po lewej Pałac Prezydencki i hotel Bristol obok niego, a dalej Europejski. Po prawej ulica Karowa schodzi zakrętem w dół, nad Wisłę — jeśli masz wolne pół godziny, to najlepsze zejście do rzeki w całym mieście.',
+    'Po prawej Pałac Prezydencki i hotel Bristol obok niego, a dalej Europejski. Po lewej ulica Karowa schodzi zakrętem w dół, nad Wisłę — jeśli masz wolne pół godziny, to najlepsze zejście do rzeki w całym mieście.',
   'poi-bristol:en':
-    'On your left, the Presidential Palace with the Bristol beside it, and the Europejski a little further on. On your right, Karowa curves downhill to the Vistula — if you have half an hour spare, it is the best walk down to the river anywhere in the city.',
+    'On your right, the Presidential Palace with the Bristol beside it, and the Europejski a little further on. On your left, Karowa curves downhill to the Vistula — if you have half an hour spare, it is the best walk down to the river anywhere in the city.',
 
   'poi-plac-zamkowy:pl':
     'Plac Zamkowy: kolumna Zygmunta i Zamek Królewski, koniec Traktu Królewskiego. Wszystko, co widzisz, zostało odbudowane po wojnie z obrazów i zdjęć. Wysiądź tu, żeby przejść Stare Miasto na drugą stronę i złapać tramwaj na Pragę.',

@@ -47,13 +47,41 @@ export function routeToLineStringFeature(
  */
 export function positionToPointFeature(
   position: readonly [number, number],
+  properties: Record<string, unknown> = {},
 ): GeoJSON.Feature<GeoJSON.Point> {
   return {
     type: 'Feature',
-    properties: {},
+    properties,
     geometry: {
       type: 'Point',
       coordinates: latLonToGeoJSON(position),
     },
+  };
+}
+
+export interface PoiGeoInput {
+  readonly poiId: string;
+  readonly center: readonly [number, number];
+  readonly radiusMeters: number;
+  readonly consumed?: boolean;
+  readonly highlight?: boolean;
+}
+
+/**
+ * Builds a FeatureCollection of POI points for CircleLayer rendering.
+ */
+export function poisToFeatureCollection(
+  pois: readonly PoiGeoInput[],
+): GeoJSON.FeatureCollection<GeoJSON.Point> {
+  return {
+    type: 'FeatureCollection',
+    features: pois.map((poi) =>
+      positionToPointFeature(poi.center, {
+        poiId: poi.poiId,
+        radiusMeters: poi.radiusMeters,
+        consumed: poi.consumed === true ? 1 : 0,
+        highlight: poi.highlight === true ? 1 : 0,
+      }),
+    ),
   };
 }

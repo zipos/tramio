@@ -40,9 +40,9 @@
 // from map orientation and should be confirmed on an actual northbound
 // ride before this ships to users:
 //   poi-lazienki       park right, embassies left
-//   poi-uniwersytet    main university gate LEFT (west side)
-//   poi-bristol        Presidential Palace + Bristol + Europejski all
-//                      LEFT (west side); Karowa descends RIGHT
+//   poi-uniwersytet    main university gate RIGHT (field-confirmed with palace)
+//   poi-bristol        Presidential Palace + Bristol + Europejski RIGHT;
+//                      Karowa descends LEFT (field-confirmed)
 //   poi-swietojerska   Chinese embassy right
 //   poi-cmentarz-zydowski  cemetery left (west), Klif right (east)
 

@@ -1,9 +1,5 @@
 /**
  * Mock for @maplibre/maplibre-react-native used in Jest tests.
- *
- * Provides minimal implementations of MapView, Camera, ShapeSource,
- * LineLayer, CircleLayer, and the setAccessToken function so the
- * OfflineMap component can be tested without native module dependencies.
  */
 
 import React from 'react';

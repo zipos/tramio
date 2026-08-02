@@ -72,13 +72,20 @@ export function startGpsReplay(options: StartGpsReplayOptions): GpsReplayHandle 
   const fixes = options.fixes;
 
   let speed = Math.max(0.25, options.speedMultiplier ?? DEFAULT_SPEED_MULTIPLIER);
+  /** Wall-clock origin for the schedule (retuned on speed/seek). */
   let baseWall = clock.now();
+  /**
+   * Fixed epoch for pipeline timestamps. Must NOT move when speed/seek retunes
+   * `baseWall`, or trajectory time jumps and the spike gate misfires.
+   */
+  const traceEpoch = baseWall;
   let index = 0;
   let timer: unknown = null;
   let heartbeatTimer: unknown = null;
   let stopped = false;
   let complete = false;
   let lastFix: ReplayFix | null = fixes[0] ?? null;
+  let lastEmittedTs = traceEpoch;
 
   const clearSchedule = (): void => {
     if (timer !== null) {
@@ -96,13 +103,13 @@ export function startGpsReplay(options: StartGpsReplayOptions): GpsReplayHandle 
 
   const emitFix = (fix: ReplayFix, opts?: { heartbeat?: boolean }): void => {
     lastFix = fix;
-    // Fix timestamp passed to the location object (which feeds the geofence pipeline)
-    // MUST reflect the vehicle's simulated trajectory time (`baseWall + fix.offsetMs`),
-    // NOT wall time divided by speed (`baseWall + fix.offsetMs / speed`).
-    // Dividing by speed compresses trace-time dt by speed-multiplier (e.g. 8x), causing
-    // the pipeline's speed gate (>120 km/h) to misclassify normal vehicle motion as a spike.
-    const timestamp = opts?.heartbeat ? clock.now() : Math.round(baseWall + fix.offsetMs);
-
+    // Trajectory timestamps stay at vehicle pace (traceEpoch + offsetMs) so
+    // wall-clock speed-up does not inflate implied ground speed past the
+    // production 120 km/h spike gate. Heartbeats stay monotone.
+    const timestamp = opts?.heartbeat
+      ? Math.max(clock.now(), lastEmittedTs + 1)
+      : traceEpoch + fix.offsetMs;
+    lastEmittedTs = timestamp;
     options.onFix({
       coords: {
         latitude: fix.coord[0],
@@ -211,38 +218,26 @@ export function startGpsReplay(options: StartGpsReplayOptions): GpsReplayHandle 
     seekToCoord(target: LatLng, radiusM = 50): boolean {
       if (stopped || fixes.length === 0) return false;
 
+      // Forward-only: never seek behind the current cursor.
       let found = -1;
-      let minDistance = Infinity;
-
-      // Prefer forward seek from current index first
       for (let i = index; i < fixes.length; i++) {
-        const d = haversine(fixes[i]!.coord, target);
-        if (d <= radiusM) {
+        if (haversine(fixes[i]!.coord, target) <= radiusM) {
           found = i;
           break;
         }
-        if (d < minDistance) {
-          minDistance = d;
-          found = i;
-        }
       }
-
-      // If no fix within radius ahead, scan full trace for nearest fix
-      if (found < 0 || (minDistance > radiusM && index > 0)) {
-        for (let i = 0; i < fixes.length; i++) {
+      if (found < 0) {
+        // Nearest ahead if nothing sits inside the radius (sparse trace).
+        let bestDist = Infinity;
+        for (let i = index; i < fixes.length; i++) {
           const d = haversine(fixes[i]!.coord, target);
-          if (d <= radiusM) {
-            found = i;
-            break;
-          }
-          if (d < minDistance) {
-            minDistance = d;
+          if (d < bestDist) {
+            bestDist = d;
             found = i;
           }
         }
       }
-
-      if (found < 0) found = 0;
+      if (found < 0) return false;
 
       clearSchedule();
       clearHeartbeat();
@@ -250,16 +245,15 @@ export function startGpsReplay(options: StartGpsReplayOptions): GpsReplayHandle 
       index = found;
       baseWall = clock.now() - fixes[found]!.offsetMs / speed;
 
-      // If the trace fix is slightly outside target radius, emit an exact fix at target
-      const targetFix: ReplayFix =
-        minDistance > radiusM
-          ? {
-              coord: target,
-              offsetMs: fixes[found]!.offsetMs,
-              accuracyM: 8,
-              speedMps: fixes[found]!.speedMps ?? 0,
-            }
-          : fixes[found]!;
+      const atTarget = haversine(fixes[found]!.coord, target) <= radiusM;
+      const targetFix: ReplayFix = atTarget
+        ? fixes[found]!
+        : {
+            coord: target,
+            offsetMs: fixes[found]!.offsetMs,
+            accuracyM: 8,
+            speedMps: fixes[found]!.speedMps ?? 0,
+          };
 
       emitFix(targetFix);
       index = Math.min(fixes.length, found + 1);

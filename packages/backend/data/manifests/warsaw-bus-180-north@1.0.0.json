@@ -118,26 +118,26 @@
     },
     {
       "path": "narratives/poi-uniwersytet.pl.md",
-      "sizeBytes": 246,
-      "sha256": "4be723d01205025504e55249cf9c3c29b33dd8dcb3b0a0a27d9d274e9665473b",
+      "sizeBytes": 247,
+      "sha256": "d39776c9e7366b07ab9ff04adcc52dda29d43b4dce0fbe484e5fa66fd221fbc0",
       "protected": false
     },
     {
       "path": "narratives/poi-uniwersytet.en.md",
-      "sizeBytes": 270,
-      "sha256": "5b268ea51735c2e6bde5c384387b1387c9a2f8f898af6a662cc29a0419547f9d",
+      "sizeBytes": 271,
+      "sha256": "462c35e107273f2f84b217cb88dac8af38ddf221dc15205726b8698e500013de",
       "protected": false
     },
     {
       "path": "narratives/poi-bristol.pl.md",
       "sizeBytes": 281,
-      "sha256": "0b17c03e3f8f84b0aee67160896232c889c603f41a3beb1d45aa3f578c1b44d8",
+      "sha256": "6af69f1cd8d8d553451ced4b695df42b8a5e285e763891fa53dac711902e8565",
       "protected": false
     },
     {
       "path": "narratives/poi-bristol.en.md",
       "sizeBytes": 311,
-      "sha256": "2ae318e0bd14e83a87ff9b30739fe917cf67ba706d06ab692cb04637db5c7a8b",
+      "sha256": "ba6b4534d70af6c6f77b08cb54582e4c56fc846a6ae4481571b831ffc2d25f3a",
       "protected": false
     },
     {
@@ -315,5 +315,5 @@
       "protected": false
     }
   ],
-  "createdAt": "2026-07-31T23:37:27.306Z"
+  "createdAt": "2026-08-02T15:15:05.278Z"
 }
