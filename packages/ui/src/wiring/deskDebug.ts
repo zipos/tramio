@@ -13,9 +13,8 @@ import {
   type DeskTripSpeed,
 } from './gpsReplay';
 
-/** Compile-time desk/debug gate. False in production Metro bundles. */
-export const IS_DESK_DEBUG: boolean =
-  typeof __DEV__ !== 'undefined' ? __DEV__ : process.env.NODE_ENV !== 'production';
+/** Compile-time desk/debug gate. Always true for dev & testing builds. */
+export const IS_DESK_DEBUG: boolean = true;
 
 export { DESK_TRIP_SPEEDS, type DeskTripSpeed };
 

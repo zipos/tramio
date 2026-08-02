@@ -193,8 +193,9 @@ export function useTourEngine(): UseTourEngineResult {
       runtimeRef.current?.setSegmentStyleResolver(sampleSegmentStyle);
     }
 
+    const deskReplayEnabled = IS_DESK_DEBUG && options?.deskGpsReplay !== false;
     runtimeRef.current?.start(config, {
-      ...(IS_DESK_DEBUG && options?.deskGpsReplay ? { deskGpsReplay: true } : {}),
+      ...(deskReplayEnabled ? { deskGpsReplay: true } : {}),
       ...(IS_DESK_DEBUG && options?.deskReplaySpeedMultiplier != null
         ? { deskReplaySpeedMultiplier: options.deskReplaySpeedMultiplier }
         : {}),
@@ -202,7 +203,7 @@ export function useTourEngine(): UseTourEngineResult {
         ? { deskReplayPoiCount: options.deskReplayPoiCount }
         : {}),
     });
-    setIsDeskGpsReplayActive(IS_DESK_DEBUG && options?.deskGpsReplay === true);
+    setIsDeskGpsReplayActive(deskReplayEnabled);
     setDeskReplaySpeedState(options?.deskReplaySpeedMultiplier ?? 4);
     setDeskReplayComplete(false);
   }, []);
