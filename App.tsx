@@ -18,6 +18,7 @@ import {
   type MapPlaybackContext,
 } from './packages/ui/src/screens/TourPlaybackScreen';
 import { ErrorBoundary } from './packages/ui/src/components/ErrorBoundary';
+import { IS_DESK_DEBUG } from './packages/ui/src/wiring/deskDebug';
 
 export default function App(): ReactElement {
   const {
@@ -31,7 +32,9 @@ export default function App(): ReactElement {
     backgroundStatus,
     lastFixAtMs,
     locationDeliveryStatus,
+    poorAccuracy,
     shareFieldDiagnostics,
+    deskDebug,
   } = useTourEngine();
   const [activeRouteTitle, setActiveRouteTitle] = useState<string | null>(null);
   const [mapContext, setMapContext] = useState<MapPlaybackContext | null>(null);
@@ -46,6 +49,7 @@ export default function App(): ReactElement {
       pack?: PackRef;
       narratives?: Readonly<Record<string, string>>;
       tones?: Readonly<Record<string, 'standard' | 'memorial'>>;
+      deskGpsReplay?: boolean;
     },
   ) => {
     setActiveRouteTitle(meta?.title ?? findDemoRoute(config.bundle.bundleId)?.title ?? null);
@@ -74,6 +78,7 @@ export default function App(): ReactElement {
     startTour(config, {
       ...(meta?.narratives ? { narratives: meta.narratives } : {}),
       ...(meta?.tones ? { tones: meta.tones } : {}),
+      ...(IS_DESK_DEBUG && meta?.deskGpsReplay ? { deskGpsReplay: true } : {}),
     });
   };
 
@@ -105,7 +110,18 @@ export default function App(): ReactElement {
             poiNames={poiNames}
             routePolyline={routePolyline}
             locationDeliveryStatus={locationDeliveryStatus}
+            poorAccuracy={poorAccuracy}
             onShareFieldDiagnostics={shareFieldDiagnostics}
+            deskDebug={
+              IS_DESK_DEBUG
+                ? {
+                    tripSpeed: deskDebug.tripSpeed,
+                    onTripSpeedChange: deskDebug.setTripSpeed,
+                    onSkipToNextPoi: deskDebug.skipToNextPoi,
+                    replayComplete: deskDebug.replayComplete,
+                  }
+                : null
+            }
           />
         );
       case 'Ended':

@@ -33,6 +33,7 @@ import { DEFAULT_PLAYBACK_SPEED, type PlaybackSpeed } from './playbackSpeed';
 import { configureTourAudioSession, releaseTourAudioSession } from './audioSession';
 import type { AudioPlaybackPort, AudioPlaybackCallbacks } from './AudioPlaybackPort';
 import { FieldDiagnosticsRecorder } from './fieldDiagnostics';
+import { createDeskDebugSession, IS_DESK_DEBUG, type DeskDebugSession } from './deskDebug';
 
 export type StateListener = (state: TourState) => void;
 
@@ -105,6 +106,17 @@ export interface SpeechStatus {
 
 export type SpeechStatusListener = (status: SpeechStatus) => void;
 
+export interface StartTourRuntimeOptions {
+  /**
+   * Desk testing on a physical device (`__DEV__` only). Ignored in production.
+   */
+  readonly deskGpsReplay?: boolean;
+  /** Wall-clock speed for desk replay (default 4). */
+  readonly deskReplaySpeedMultiplier?: number;
+  /** How many leading POIs to include in the desk trace (default 8). */
+  readonly deskReplayPoiCount?: number;
+}
+
 /** No onStart inside this window ⇒ no usable TTS engine on this device. */
 const SPEECH_START_TIMEOUT_MS = 4_000;
 /** Approximate spoken words per second at rate 1.0, for watchdog sizing. */
@@ -134,8 +146,18 @@ export class TourRuntime {
   private currentSegmentId: string | null = null;
   // Track focus-loss state so we know when to dispatch FocusRegain.
   private focusLost = false;
-  // AppState subscription for FocusRegain dispatch.
+  // AppState subscription for FocusRegain + keep-awake policy.
   private appStateSubscription: NativeEventSubscription | null = null;
+  private deskDebug: DeskDebugSession | null = null;
+  private deskReplayComplete = false;
+  private tourKeepAwakeActive = false;
+  private deskReplaySpeed = 4;
+  private deskReplaySpeedListeners = new Set<(speed: number) => void>();
+  private deskReplayCompleteListeners = new Set<(complete: boolean) => void>();
+  /** Consecutive accuracy rejects since last accept — drives poorAccuracy banner. */
+  private accuracyRejectStreak = 0;
+  private poorAccuracy = false;
+  private poorAccuracyListeners = new Set<(poor: boolean) => void>();
 
   // ─── PUBLIC CONTRACT: replay, background status, last fix ─────────
   private lastSpokenText: string | null = null;
@@ -192,13 +214,13 @@ export class TourRuntime {
   // ─── Public API ─────────────────────────────────────────────────────
 
   /** Start a tour. Begins watching location and dispatches start. */
-  start(config: StartTourConfig): void {
+  start(config: StartTourConfig, options?: StartTourRuntimeOptions): void {
     this.config = config;
 
     // BUG 1 FIX: activate the audio session for background + silent-mode playback.
     void configureTourAudioSession().catch(() => undefined);
 
-    void activateKeepAwakeAsync('tramio-tour').catch(() => undefined);
+    this.syncKeepAwake(AppState.currentState === 'active');
 
     // Reset per-tour state.
     this.lastFixAtMs = null;
@@ -207,6 +229,12 @@ export class TourRuntime {
     this.deliberateStop = false;
     this.clearSpeechWatchdogs();
     this.speechStatus = { available: true };
+    this.stopDeskDebug();
+    this.accuracyRejectStreak = 0;
+    this.setPoorAccuracy(false);
+    this.deskReplaySpeed = options?.deskReplaySpeedMultiplier ?? 4;
+    this.setDeskReplayComplete(false);
+    for (const listener of this.deskReplaySpeedListeners) listener(this.deskReplaySpeed);
 
     // Wave 4: Initialize diagnostics recorder for this tour.
     this.diagnosticsRecorder = new FieldDiagnosticsRecorder();
@@ -218,19 +246,30 @@ export class TourRuntime {
     // installed would otherwise fail silently on the first POI.
     void this.probeSpeechAvailability(config.language);
 
-    // Subscribe to AppState for FocusRegain dispatch after phone calls etc.
+    // Subscribe to AppState for FocusRegain + keep-awake (screen on only).
+    this.appStateSubscription?.remove();
     this.appStateSubscription = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active' && this.focusLost) {
         this.focusLost = false;
         this.dispatch({ kind: 'FocusRegain' });
       }
+      // Keep-awake only while foregrounded — pocket rides must not pin the CPU.
+      this.syncKeepAwake(nextState === 'active');
+      if (nextState === 'active') {
+        this.locationAdapter?.requestImmediateRecovery();
+      }
     });
+
+    // Desk GPS inject is __DEV__-only; production builds never enter replay mode.
+    const deskReplay = IS_DESK_DEBUG && options?.deskGpsReplay === true;
 
     this.locationAdapter = new LocationAdapter(config.route, config.geofences, {
       onAccepted: (update) => {
         this.lastFixAtMs = Date.now();
         this.notifyLastFix();
         this.diagnosticsRecorder?.recordAccepted();
+        this.setPoorAccuracy(false);
+        this.accuracyRejectStreak = 0;
         this.dispatch({ kind: 'LocationAccepted', update });
       },
       onGeofenceDwell: (poiId) => {
@@ -246,6 +285,10 @@ export class TourRuntime {
       },
       onRejected: (meta) => {
         this.diagnosticsRecorder?.recordRejected(meta.reason);
+        if (meta.reason === 'accuracy') {
+          this.accuracyRejectStreak += 1;
+          if (this.accuracyRejectStreak >= 3) this.setPoorAccuracy(true);
+        }
       },
     });
 
@@ -277,16 +320,23 @@ export class TourRuntime {
       this.diagnosticsRecorder?.recordRecoveryFailure();
     };
     this.locationAdapter.onChannelChange = (channel) => {
-      if (channel === 'foreground') {
+      if (channel === 'foreground' || channel === 'replay') {
         this.diagnosticsRecorder?.recordChannelTransition('foreground');
       } else {
         this.diagnosticsRecorder?.recordChannelTransition('background');
       }
     };
 
-    void this.locationAdapter.start().catch(() => {
-      this.dispatch({ kind: 'UserCommand', cmd: 'end' });
-    });
+    void this.locationAdapter
+      .start(deskReplay ? { source: 'replay' } : { source: 'live' })
+      .then(() => {
+        if (deskReplay) {
+          this.beginDeskDebug(options);
+        }
+      })
+      .catch(() => {
+        this.dispatch({ kind: 'UserCommand', cmd: 'end' });
+      });
 
     this.dispatch({ kind: 'UserCommand', cmd: 'start' });
   }
@@ -345,6 +395,85 @@ export class TourRuntime {
     return () => {
       this.lastFixListeners.delete(listener);
     };
+  }
+
+  getPoorAccuracy(): boolean {
+    return this.poorAccuracy;
+  }
+
+  subscribePoorAccuracy(listener: (poor: boolean) => void): () => void {
+    this.poorAccuracyListeners.add(listener);
+    return () => {
+      this.poorAccuracyListeners.delete(listener);
+    };
+  }
+
+  isDeskGpsReplayActive(): boolean {
+    return IS_DESK_DEBUG && this.deskDebug?.isActive() === true;
+  }
+
+  isDeskReplayComplete(): boolean {
+    return this.deskReplayComplete;
+  }
+
+  getDeskReplaySpeed(): number {
+    return this.deskReplaySpeed;
+  }
+
+  subscribeDeskReplaySpeed(listener: (speed: number) => void): () => void {
+    this.deskReplaySpeedListeners.add(listener);
+    return () => {
+      this.deskReplaySpeedListeners.delete(listener);
+    };
+  }
+
+  subscribeDeskReplayComplete(listener: (complete: boolean) => void): () => void {
+    this.deskReplayCompleteListeners.add(listener);
+    return () => {
+      this.deskReplayCompleteListeners.delete(listener);
+    };
+  }
+
+  /** `__DEV__` desk control: change GPS trace wall-clock multiplier. */
+  setDeskReplaySpeed(speed: number): void {
+    if (!IS_DESK_DEBUG) return;
+    const next = Math.max(0.25, speed);
+    this.deskReplaySpeed = next;
+    this.deskDebug?.setTripSpeed(next);
+    for (const listener of this.deskReplaySpeedListeners) listener(next);
+  }
+
+  /**
+   * `__DEV__` control: skip ahead to the next unconsumed POI and play it now.
+   *
+   * Seeks the desk GPS cursor, snaps the rider on the map, and fires the POI
+   * without waiting on dwell. No-op in production.
+   */
+  debugTriggerNextPoi(): void {
+    if (!IS_DESK_DEBUG) return;
+    if (this.deskDebug?.isActive()) {
+      this.deskDebug.skipToNextPoi();
+      this.setDeskReplayComplete(this.deskDebug.isReplayComplete());
+      return;
+    }
+    // Fallback when desk session is not running (e.g. live GPS + Next POI).
+    if (!this.config) return;
+    const playing = this.getPlayingSegment();
+    if (playing) {
+      this.stopAllPlayback();
+      this.dispatch({ kind: 'AudioFinished', segmentId: playing.segmentId });
+    }
+    const session =
+      this.state.phase === 'Active' ||
+      this.state.phase === 'Standby' ||
+      this.state.phase === 'DeadReckoning' ||
+      this.state.phase === 'Deviation'
+        ? this.state.session
+        : null;
+    if (!session) return;
+    const next = this.config.geofences.find((g) => !session.consumed.has(g.poiId));
+    if (!next) return;
+    this.dispatch({ kind: 'GeofenceDwell', poiId: next.poiId });
   }
 
   getBackgroundStatus(): BackgroundStatus {
@@ -463,6 +592,7 @@ export class TourRuntime {
     this.appStateSubscription?.remove();
     this.appStateSubscription = null;
     this.clearSpeechWatchdogs();
+    this.stopDeskDebug();
     this.locationAdapter?.stop();
     this.locationAdapter = null;
     // Stop all playback and release audio port.
@@ -470,7 +600,7 @@ export class TourRuntime {
     if (this.audioPort) {
       this.audioPort.release();
     }
-    deactivateKeepAwake('tramio-tour').catch(() => undefined);
+    this.syncKeepAwake(false);
     void releaseTourAudioSession().catch(() => undefined);
     this.cancelAllTimers();
     this.listeners.clear();
@@ -515,8 +645,7 @@ export class TourRuntime {
         this.handleResumeAudio();
         break;
       case 'RequestLocationMode':
-        // expo-location runs a single high-accuracy watch for the whole
-        // tour; mode transitions are a no-op at this layer.
+        this.locationAdapter?.setEngineMode(cmd.mode);
         break;
       case 'ScheduleTimer':
         this.scheduleTimer(cmd.id, cmd.afterMs);
@@ -859,11 +988,12 @@ export class TourRuntime {
   private handleReleaseAll(): void {
     this.appStateSubscription?.remove();
     this.appStateSubscription = null;
+    this.stopDeskDebug();
     this.locationAdapter?.stop();
     this.locationAdapter = null;
     // Stop all playback sources.
     this.stopAllPlayback();
-    deactivateKeepAwake('tramio-tour').catch(() => undefined);
+    this.syncKeepAwake(false);
     void releaseTourAudioSession().catch(() => undefined);
     // Wave 4: Finalize diagnostics — report remains available after Ended.
     if (this.diagnosticsRecorder) {
@@ -875,6 +1005,93 @@ export class TourRuntime {
     this.notifyLastFix();
     this.backgroundStatus = { mode: 'foreground-only', reason: 'unavailable' };
     this.notifyBackgroundStatus();
+  }
+
+  private syncKeepAwake(wantActive: boolean): void {
+    if (wantActive) {
+      if (this.tourKeepAwakeActive) return;
+      this.tourKeepAwakeActive = true;
+      void activateKeepAwakeAsync('tramio-tour').catch(() => {
+        this.tourKeepAwakeActive = false;
+      });
+      return;
+    }
+    if (!this.tourKeepAwakeActive) {
+      deactivateKeepAwake('tramio-tour').catch(() => undefined);
+      return;
+    }
+    this.tourKeepAwakeActive = false;
+    deactivateKeepAwake('tramio-tour').catch(() => undefined);
+  }
+
+  private stopDeskDebug(): void {
+    this.deskDebug?.stop();
+    this.deskDebug = null;
+    this.setDeskReplayComplete(false);
+  }
+
+  private setDeskReplayComplete(complete: boolean): void {
+    if (this.deskReplayComplete === complete) return;
+    this.deskReplayComplete = complete;
+    for (const listener of this.deskReplayCompleteListeners) listener(complete);
+  }
+
+  private setPoorAccuracy(poor: boolean): void {
+    if (this.poorAccuracy === poor) return;
+    this.poorAccuracy = poor;
+    for (const listener of this.poorAccuracyListeners) listener(poor);
+  }
+
+  private beginDeskDebug(options?: StartTourRuntimeOptions): void {
+    if (!IS_DESK_DEBUG) return;
+    if (!this.locationAdapter || this.locationAdapter.getLocationSource() !== 'replay') return;
+
+    const adapter = this.locationAdapter;
+    this.deskDebug = createDeskDebugSession({
+      injectFix: (loc) => adapter.feedReplayFix(loc as never),
+      resyncPipelineAt: (coord, accuracyM) => adapter.resyncPipelineAt(coord, accuracyM),
+      acceptPosition: (update) => {
+        this.lastFixAtMs = Date.now();
+        this.notifyLastFix();
+        this.dispatch({ kind: 'LocationAccepted', update });
+      },
+      finishPlayingSegment: (segmentId) => {
+        this.stopAllPlayback();
+        this.dispatch({ kind: 'AudioFinished', segmentId });
+      },
+      stopPlayback: () => this.stopAllPlayback(),
+      triggerPoi: (poiId) => this.dispatch({ kind: 'GeofenceDwell', poiId }),
+      getPlayingSegmentId: () => this.getPlayingSegment()?.segmentId ?? null,
+      getConsumed: () => {
+        const s =
+          this.state.phase === 'Active' ||
+          this.state.phase === 'Standby' ||
+          this.state.phase === 'DeadReckoning' ||
+          this.state.phase === 'Deviation'
+            ? this.state.session
+            : null;
+        return s?.consumed ?? new Set();
+      },
+      getConfig: () => this.config,
+      onTripSpeedChange: (mult) => {
+        this.deskReplaySpeed = mult;
+        for (const listener of this.deskReplaySpeedListeners) listener(mult);
+      },
+      onReplayComplete: () => this.setDeskReplayComplete(true),
+      noteFixWallClock: () => {
+        // Raw delivery may still be spike-rejected; keep UI GPS-liveness warm
+        // from the replay pump itself.
+        this.lastFixAtMs = Date.now();
+        this.notifyLastFix();
+      },
+    });
+
+    const speed = options?.deskReplaySpeedMultiplier ?? this.deskReplaySpeed;
+    this.deskReplaySpeed = speed;
+    this.deskDebug?.start({
+      speedMultiplier: speed,
+      ...(options?.deskReplayPoiCount != null ? { poiCount: options.deskReplayPoiCount } : {}),
+    });
   }
 
   // ─── Timer management ───────────────────────────────────────────────

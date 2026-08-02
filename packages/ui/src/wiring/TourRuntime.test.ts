@@ -85,7 +85,8 @@ jest.mock('expo-location', () => ({
   hasStartedLocationUpdatesAsync: () => Promise.resolve(false),
   startLocationUpdatesAsync: () => Promise.resolve(),
   stopLocationUpdatesAsync: () => Promise.resolve(),
-  Accuracy: { High: 6 },
+  Accuracy: { Balanced: 3, High: 4, Highest: 5, BestForNavigation: 6 },
+  ActivityType: { Other: 1, AutomotiveNavigation: 2, OtherNavigation: 5 },
   PermissionStatus: { GRANTED: 'granted' },
 }));
 
@@ -410,5 +411,64 @@ describe('TourRuntime — missing TTS engine must not hang the tour', () => {
 
     expect(runtime.getSpeechStatus()).toEqual({ available: true });
     runtime.destroy();
+  });
+});
+
+describe('TourRuntime — debugTriggerNextPoi', () => {
+  let runtime: TourRuntime;
+
+  const TWO_POI_CONFIG: StartTourConfig = {
+    bundle: { bundleId: 'test', bundleVersion: '1.0.0' },
+    language: 'en',
+    route: [
+      [52.0, 21.0],
+      [52.01, 21.0],
+    ],
+    geofences: [
+      {
+        poiId: 'poi-a',
+        geometry: { kind: 'circle', center: [52.0, 21.0], radiusMeters: 100 },
+        dwellSec: 3,
+        priority: 50,
+        authorIndex: 0,
+      },
+      {
+        poiId: 'poi-b',
+        geometry: { kind: 'circle', center: [52.01, 21.0], radiusMeters: 100 },
+        dwellSec: 3,
+        priority: 50,
+        authorIndex: 1,
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    speechMock.callbacks = {};
+    speechMock.speakCalls = [];
+    speechMock.autoStart = true;
+    mockAppStateListeners.length = 0;
+    runtime = new TourRuntime({ narrativeResolver: () => 'Hello world' });
+  });
+
+  afterEach(() => {
+    runtime.destroy();
+  });
+
+  it('finishes the playing segment and starts the next POI immediately', () => {
+    runtime.start(TWO_POI_CONFIG);
+    runtime.dispatch({ kind: 'GeofenceDwell', poiId: 'poi-a' });
+
+    const mid = runtime.getState();
+    if (mid.phase === 'Active') {
+      expect(mid.session.playing?.poiId).toBe('poi-a');
+    }
+
+    runtime.debugTriggerNextPoi();
+
+    const after = runtime.getState();
+    if (after.phase === 'Active') {
+      expect(after.session.consumed.has('poi-a')).toBe(true);
+      expect(after.session.playing?.poiId).toBe('poi-b');
+    }
   });
 });

@@ -25,6 +25,7 @@ import {
   sampleSegmentStyle,
 } from './sampleNarratives';
 import { DEFAULT_PLAYBACK_SPEED, type PlaybackSpeed } from './playbackSpeed';
+import { IS_DESK_DEBUG } from './deskDebug';
 
 function getPlayingSegmentId(state: TourState): string | null {
   if (
@@ -43,6 +44,13 @@ export interface StartTourOptions {
   narratives?: Readonly<Record<string, string>>;
   /** Delivery tone per POI id. Used to build a segment style resolver for pack tours. */
   tones?: Readonly<Record<string, 'standard' | 'memorial'>>;
+  /**
+   * Desk testing on device: inject a Warsaw 180 GPS prefix instead of live GNSS.
+   * Intended for `__DEV__` builds on a Poco (or any phone) at a desk.
+   */
+  deskGpsReplay?: boolean;
+  deskReplaySpeedMultiplier?: number;
+  deskReplayPoiCount?: number;
 }
 
 export interface UseTourEngineResult {
@@ -71,10 +79,23 @@ export interface UseTourEngineResult {
    */
   locationDeliveryStatus: LocationDeliveryStatus;
   /**
+   * True when recent fixes were rejected for accuracy (>50 m gate).
+   * Distinct from delivery silence.
+   */
+  poorAccuracy: boolean;
+  /**
    * Wave 4: Share field diagnostics report via system share sheet.
    * Only fires on explicit user press. Contains no coordinates or PII.
    */
   shareFieldDiagnostics: () => Promise<void>;
+  /** Desk-debug API — always present; methods no-op and flags stay false in production. */
+  deskDebug: {
+    active: boolean;
+    tripSpeed: number;
+    replayComplete: boolean;
+    setTripSpeed: (speed: number) => void;
+    skipToNextPoi: () => void;
+  };
 }
 
 export function useTourEngine(): UseTourEngineResult {
@@ -90,6 +111,10 @@ export function useTourEngine(): UseTourEngineResult {
   const [speechStatus, setSpeechStatus] = useState<SpeechStatus>({ available: true });
   const [locationDeliveryStatus, setLocationDeliveryStatus] =
     useState<LocationDeliveryStatus>('acquiring');
+  const [poorAccuracy, setPoorAccuracy] = useState(false);
+  const [deskReplaySpeed, setDeskReplaySpeedState] = useState(4);
+  const [isDeskGpsReplayActive, setIsDeskGpsReplayActive] = useState(false);
+  const [deskReplayComplete, setDeskReplayComplete] = useState(false);
 
   if (runtimeRef.current === null) {
     runtimeRef.current = new TourRuntime({
@@ -119,6 +144,16 @@ export function useTourEngine(): UseTourEngineResult {
     const unsubDelivery = runtime.subscribeLocationDeliveryStatus((status) => {
       setLocationDeliveryStatus(status);
     });
+    const unsubPoor = runtime.subscribePoorAccuracy((poor) => {
+      setPoorAccuracy(poor);
+    });
+    const unsubDeskSpeed = runtime.subscribeDeskReplaySpeed((speed) => {
+      setDeskReplaySpeedState(speed);
+      setIsDeskGpsReplayActive(runtime.isDeskGpsReplayActive());
+    });
+    const unsubDeskComplete = runtime.subscribeDeskReplayComplete((complete) => {
+      setDeskReplayComplete(complete);
+    });
     return () => {
       unsubState();
       unsubSpeed();
@@ -126,6 +161,9 @@ export function useTourEngine(): UseTourEngineResult {
       unsubFix();
       unsubSpeech();
       unsubDelivery();
+      unsubPoor();
+      unsubDeskSpeed();
+      unsubDeskComplete();
     };
   }, []);
 
@@ -155,11 +193,24 @@ export function useTourEngine(): UseTourEngineResult {
       runtimeRef.current?.setSegmentStyleResolver(sampleSegmentStyle);
     }
 
-    runtimeRef.current?.start(config);
+    runtimeRef.current?.start(config, {
+      ...(IS_DESK_DEBUG && options?.deskGpsReplay ? { deskGpsReplay: true } : {}),
+      ...(IS_DESK_DEBUG && options?.deskReplaySpeedMultiplier != null
+        ? { deskReplaySpeedMultiplier: options.deskReplaySpeedMultiplier }
+        : {}),
+      ...(IS_DESK_DEBUG && options?.deskReplayPoiCount != null
+        ? { deskReplayPoiCount: options.deskReplayPoiCount }
+        : {}),
+    });
+    setIsDeskGpsReplayActive(IS_DESK_DEBUG && options?.deskGpsReplay === true);
+    setDeskReplaySpeedState(options?.deskReplaySpeedMultiplier ?? 4);
+    setDeskReplayComplete(false);
   }, []);
 
   const endTour = useCallback(() => {
     runtimeRef.current?.end();
+    setIsDeskGpsReplayActive(false);
+    setDeskReplayComplete(false);
   }, []);
 
   const setPlaybackSpeed = useCallback((speed: PlaybackSpeed) => {
@@ -180,6 +231,17 @@ export function useTourEngine(): UseTourEngineResult {
     }
   }, []);
 
+  const setDeskReplaySpeed = useCallback((speed: number) => {
+    if (!IS_DESK_DEBUG) return;
+    runtimeRef.current?.setDeskReplaySpeed(speed);
+    setDeskReplaySpeedState(speed);
+  }, []);
+
+  const skipToNextPoi = useCallback(() => {
+    if (!IS_DESK_DEBUG) return;
+    runtimeRef.current?.debugTriggerNextPoi();
+  }, []);
+
   const caption = resolveNarrativeCaption(getPlayingSegmentId(state), packNarrativesRef.current);
 
   return {
@@ -194,6 +256,14 @@ export function useTourEngine(): UseTourEngineResult {
     lastFixAtMs,
     speechStatus,
     locationDeliveryStatus,
+    poorAccuracy,
     shareFieldDiagnostics,
+    deskDebug: {
+      active: IS_DESK_DEBUG && isDeskGpsReplayActive,
+      tripSpeed: deskReplaySpeed,
+      replayComplete: deskReplayComplete,
+      setTripSpeed: setDeskReplaySpeed,
+      skipToNextPoi,
+    },
   };
 }

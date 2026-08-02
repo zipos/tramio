@@ -24,6 +24,7 @@ import * as TaskManager from 'expo-task-manager';
 import {
   initialPipelineState,
   isRejected,
+  projectOnRoute,
   step,
   type PipelineState,
   type Geofence,
@@ -87,6 +88,36 @@ export function bindLocationSession(
 
 export function unbindLocationSession(): void {
   session = null;
+}
+
+/**
+ * Soft-reset pipeline kinematics around `coord` so a desk/debug teleport
+ * does not trip the spike gate on the next fix.
+ */
+export function resyncLocationSessionAt(coord: LatLng, accuracyM = 8): void {
+  if (session === null) return;
+  const ts = Date.now();
+  const alongRouteM = projectOnRoute(session.pipeline.route, coord).alongRouteM;
+  const raw = {
+    ts,
+    coord,
+    accuracyM,
+    speedMps: 0,
+  };
+  session.pipeline = {
+    ...session.pipeline,
+    lastAccepted: raw,
+    lastEmitted: {
+      ts,
+      coord,
+      accuracyM,
+      smoothed: coord,
+      alongRouteM,
+      speedMps: 0,
+    },
+    smoothingWindow: [coord, coord, coord],
+    dwell: {},
+  };
 }
 
 function runOnMainThread(fn: () => void): void {
@@ -178,8 +209,13 @@ export function ensureLocationTaskDefined(): void {
   });
 }
 
+import type { LocationSamplingOptions } from './locationPowerPolicy';
+import { CRUISE_SAMPLING } from './locationPowerPolicy';
+
 /** Start background location updates (also delivers while foregrounded). */
-export async function startBackgroundLocationUpdates(): Promise<void> {
+export async function startBackgroundLocationUpdates(
+  sampling: LocationSamplingOptions = CRUISE_SAMPLING,
+): Promise<void> {
   ensureLocationTaskDefined();
 
   if (Platform.OS === 'android') {
@@ -195,10 +231,13 @@ export async function startBackgroundLocationUpdates(): Promise<void> {
   }
 
   const options: Location.LocationTaskOptions = {
-    accuracy: Location.Accuracy.High,
-    timeInterval: 1000,
-    distanceInterval: 1,
-    pausesUpdatesAutomatically: false,
+    accuracy: sampling.accuracy as Location.Accuracy,
+    timeInterval: sampling.timeInterval,
+    distanceInterval: sampling.distanceInterval,
+    pausesUpdatesAutomatically: sampling.pausesUpdatesAutomatically,
+    activityType: sampling.activityType as Location.ActivityType,
+    // Prefer fused Wi‑Fi / cell assist when the user allows improved accuracy.
+    mayShowUserSettingsDialog: true,
     foregroundService: {
       notificationTitle: 'Tramio tour in progress',
       notificationBody: 'Playing landmark narration along your route',

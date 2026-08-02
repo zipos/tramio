@@ -71,7 +71,8 @@ jest.mock('expo-location', () => ({
   hasStartedLocationUpdatesAsync: () => Promise.resolve(false),
   startLocationUpdatesAsync: () => Promise.resolve(),
   stopLocationUpdatesAsync: () => Promise.resolve(),
-  Accuracy: { High: 6 },
+  Accuracy: { Balanced: 3, High: 4, Highest: 5, BestForNavigation: 6 },
+  ActivityType: { Other: 1, AutomotiveNavigation: 2, OtherNavigation: 5 },
   PermissionStatus: { GRANTED: 'granted' },
 }));
 

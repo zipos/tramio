@@ -133,14 +133,16 @@ location, speech, keep-awake, and background tasks. Custom turbo modules under
 cherry-picked per-platform plumbing when Expo is not production-ready for a
 specific requirement.
 
-| Concern        | Module (shipping)                     | Wiring file                                              |
-| -------------- | ------------------------------------- | -------------------------------------------------------- |
-| Location       | `expo-location` + `expo-task-manager` | `locationAdapter.ts`, `backgroundLocationTask.ts`        |
-| TTS            | `expo-speech`                         | `TourRuntime.ts`                                         |
-| Audio playback | `expo-audio` (SDK 57)                 | `ExpoAudioPlaybackAdapter.ts`, `TourRuntime.ts`          |
-| Keep-awake     | `expo-keep-awake`                     | `TourRuntime.ts`                                         |
-| Storage        | `expo-sqlite` + `expo-file-system`    | `openDeviceStorage()`, `usePackManager`, `loadPackTour`  |
-| Map (offline)  | `@maplibre/maplibre-react-native`     | `OfflineMap` on `TourPlaybackScreen` when pack installed |
+| Concern         | Module (shipping)                     | Wiring file                                              |
+| --------------- | ------------------------------------- | -------------------------------------------------------- |
+| Location        | `expo-location` + `expo-task-manager` | `locationAdapter.ts`, `backgroundLocationTask.ts`        |
+| TTS             | `expo-speech`                         | `TourRuntime.ts`                                         |
+| Audio playback  | `expo-audio` (SDK 57)                 | `ExpoAudioPlaybackAdapter.ts`, `TourRuntime.ts`          |
+| Keep-awake      | `expo-keep-awake`                     | `TourRuntime.ts` — **foreground only** while tour active |
+| Location power  | `locationPowerPolicy.ts`              | Cruise 4s/25m vs approach 1s/5m; adaptive near geofences |
+| Desk GPS replay | `gpsReplay.ts` + `__DEV__` UI button  | Inject Warsaw 180 prefix on Poco without live GNSS       |
+| Storage         | `expo-sqlite` + `expo-file-system`    | `openDeviceStorage()`, `usePackManager`, `loadPackTour`  |
+| Map (offline)   | `@maplibre/maplibre-react-native`     | `OfflineMap` on `TourPlaybackScreen` when pack installed |
 
 ### Native cherry-pick candidates (not wired unless needed)
 
@@ -399,6 +401,12 @@ timers to validate these scenarios deterministically without a device.
 ---
 
 ## Suggested Next Steps (highest value first)
+
+> **Product / field-ride backlog:** [docs/field-ride-backlog.md](docs/field-ride-backlog.md)
+> parks voice, corridor POIs, map/UI, rename, interests, draft agents, Live
+> Activities, and related notes so they survive context-limited sessions.
+> **Current engineering focus:** location battery optimization + Poco desk GPS
+> replay (`__DEV__` button on route select). `simulate:180` is a CI gate only.
 
 1. **Full-route field test bus 180 northbound end to end** — ride Wilanów → Żoliborz with
    the screen locked and log which of the 24 POIs fire. Initial 3-stop physical test ride passed; full 24-POI ride remains for final calibration.

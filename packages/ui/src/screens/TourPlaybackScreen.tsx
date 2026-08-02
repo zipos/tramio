@@ -20,6 +20,8 @@ import {
   formatPlaybackSpeedLabel,
   type PlaybackSpeed,
 } from '../wiring/playbackSpeed';
+import { IS_DESK_DEBUG } from '../wiring/deskDebug';
+import { DeskTripControls } from '../components/DeskTripControls';
 import { NextPoiIndicator } from '../components/NextPoiIndicator';
 import { BackgroundBanner } from '../components/BackgroundBanner';
 import { MidRouteBoardingNotice } from '../components/MidRouteBoardingNotice';
@@ -63,8 +65,17 @@ export interface TourPlaybackScreenProps {
   routePolyline: readonly LatLng[];
   /** Wave 4: GPS delivery health status. */
   locationDeliveryStatus?: LocationDeliveryStatus;
+  /** True when pipeline is rejecting fixes for accuracy. */
+  poorAccuracy?: boolean;
   /** Wave 4: Share field diagnostics on explicit user press. */
   onShareFieldDiagnostics?: () => void;
+  /** Desk debug panel — only mounted when `IS_DESK_DEBUG` is true. */
+  deskDebug?: {
+    tripSpeed: number;
+    onTripSpeedChange: (speed: number) => void;
+    onSkipToNextPoi: () => void;
+    replayComplete?: boolean;
+  } | null;
 }
 
 function getSession(state: TourState) {
@@ -98,11 +109,14 @@ export function TourPlaybackScreen({
   poiNames,
   routePolyline,
   locationDeliveryStatus,
+  poorAccuracy = false,
   onShareFieldDiagnostics,
+  deskDebug = null,
 }: TourPlaybackScreenProps): ReactElement {
   const session = getSession(state);
   const segmentId = getPlayingSegmentId(state);
   const phaseLabel = getRiderPhaseLabel(state.phase);
+  const [narrationSettingsOpen, setNarrationSettingsOpen] = useState(false);
 
   // ─── FIX 1: Next-POI computation (memoize along-route precomputation) ───
   const geofences = session?.geofences;
@@ -178,10 +192,7 @@ export function TourPlaybackScreen({
 
       {/* Wave 4: GPS delivery health banner */}
       {locationDeliveryStatus ? (
-        <GpsDeliveryBanner
-          deliveryStatus={locationDeliveryStatus}
-          poorAccuracy={locationDeliveryStatus === 'live' && gpsStatus === 'acquiring'}
-        />
+        <GpsDeliveryBanner deliveryStatus={locationDeliveryStatus} poorAccuracy={poorAccuracy} />
       ) : null}
 
       {/* FIX 7: Mid-route boarding notice */}
@@ -242,29 +253,53 @@ export function TourPlaybackScreen({
         </View>
       ) : null}
 
-      {/* FIX 8: Speed buttons with 44pt minimum hit area */}
-      <View style={styles.speedCard} accessibilityRole="adjustable">
-        <Text style={styles.speedLabel}>Playback speed</Text>
-        <View style={styles.speedRow}>
-          {PLAYBACK_SPEEDS.map((speed) => {
-            const selected = speed === playbackSpeed;
-            return (
-              <TouchableOpacity
-                key={speed}
-                style={[styles.speedButton, selected && styles.speedButtonSelected]}
-                onPress={() => onPlaybackSpeedChange(speed)}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                accessibilityLabel={`Playback speed ${formatPlaybackSpeedLabel(speed)}`}
-              >
-                <Text style={[styles.speedButtonText, selected && styles.speedButtonTextSelected]}>
-                  {formatPlaybackSpeedLabel(speed)}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+      {/* Narration speed — collapsed; not a primary ride control */}
+      <TouchableOpacity
+        style={styles.settingsToggle}
+        onPress={() => setNarrationSettingsOpen((o) => !o)}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: narrationSettingsOpen }}
+        accessibilityLabel="Narration settings"
+      >
+        <Text style={styles.settingsToggleText}>
+          {narrationSettingsOpen ? '▾' : '▸'} Narration settings
+        </Text>
+      </TouchableOpacity>
+      {narrationSettingsOpen ? (
+        <View style={styles.speedCard} accessibilityRole="adjustable">
+          <Text style={styles.speedLabel}>Voice speed</Text>
+          <View style={styles.speedRow}>
+            {PLAYBACK_SPEEDS.map((speed) => {
+              const selected = speed === playbackSpeed;
+              return (
+                <TouchableOpacity
+                  key={speed}
+                  style={[styles.speedButton, selected && styles.speedButtonSelected]}
+                  onPress={() => onPlaybackSpeedChange(speed)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`Playback speed ${formatPlaybackSpeedLabel(speed)}`}
+                >
+                  <Text
+                    style={[styles.speedButtonText, selected && styles.speedButtonTextSelected]}
+                  >
+                    {formatPlaybackSpeedLabel(speed)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
-      </View>
+      ) : null}
+
+      {IS_DESK_DEBUG && deskDebug ? (
+        <DeskTripControls
+          tripSpeed={deskDebug.tripSpeed}
+          onTripSpeedChange={deskDebug.onTripSpeedChange}
+          onSkipToNextPoi={deskDebug.onSkipToNextPoi}
+          replayComplete={deskDebug.replayComplete === true}
+        />
+      ) : null}
 
       {/* FIX 2: Replay + End Tour buttons */}
       <View style={styles.controlRow}>
@@ -386,6 +421,17 @@ const styles = StyleSheet.create({
   speedCard: {
     width: '100%',
     marginBottom: 24,
+  },
+  settingsToggle: {
+    width: '100%',
+    maxWidth: 400,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+  settingsToggleText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6b7280',
   },
   speedLabel: {
     fontSize: 13,

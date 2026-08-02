@@ -1,5 +1,6 @@
-// Allowed narration playback speeds (Requirement 16.4).
-export const PLAYBACK_SPEEDS = [0.75, 1.0, 1.25, 1.5] as const;
+// Allowed narration playback speeds.
+// Finer than the original coarse set; UI keeps these behind a settings disclosure.
+export const PLAYBACK_SPEEDS = [0.9, 1.0, 1.1] as const;
 
 export type PlaybackSpeed = (typeof PLAYBACK_SPEEDS)[number];
 

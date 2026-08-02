@@ -24,6 +24,7 @@ import {
   type CatalogRouteEntry,
   type PackInstallState,
 } from '../wiring/usePackManager';
+import { IS_DESK_DEBUG } from '../wiring/deskDebug';
 
 export interface RouteSelectionScreenProps {
   onStartTour: (
@@ -34,6 +35,7 @@ export interface RouteSelectionScreenProps {
       pack?: PackRef;
       narratives?: Readonly<Record<string, string>>;
       tones?: Readonly<Record<string, 'standard' | 'memorial'>>;
+      deskGpsReplay?: boolean;
     },
   ) => void;
 }
@@ -172,6 +174,7 @@ function CatalogRouteCard({
   startError,
   onDownload,
   onStart,
+  onDeskReplay,
 }: {
   route: CatalogRouteEntry;
   state: PackInstallState;
@@ -180,6 +183,7 @@ function CatalogRouteCard({
   startError: string | null;
   onDownload: () => void;
   onStart: () => void;
+  onDeskReplay?: () => void;
 }): ReactElement {
   const ready = state === 'ready';
   const downloading = state === 'downloading';
@@ -220,6 +224,16 @@ function CatalogRouteCard({
       >
         <Text style={styles.primaryButtonText}>{ready ? 'Start Tour' : 'Download Pack'}</Text>
       </TouchableOpacity>
+      {ready && IS_DESK_DEBUG && onDeskReplay ? (
+        <TouchableOpacity
+          style={styles.deskReplayButton}
+          onPress={onDeskReplay}
+          accessibilityRole="button"
+          accessibilityLabel={`Desk GPS replay for ${route.title}`}
+        >
+          <Text style={styles.deskReplayButtonText}>Desk replay (GPS inject)</Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
@@ -227,8 +241,17 @@ function CatalogRouteCard({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export function RouteSelectionScreen({ onStartTour }: RouteSelectionScreenProps): ReactElement {
-  const { routes, installState, error, catalogWarning, downloadPack, loadInstalledTour, storage } =
-    usePackManager();
+  const {
+    routes,
+    installState,
+    error,
+    catalogWarning,
+    downloadPack,
+    loadInstalledTour,
+    storage,
+    storageOpening,
+    retryStorage,
+  } = usePackManager();
 
   const [language, setLanguage] = useState<TourLanguage>(getDefaultLanguage);
   const [startError, setStartError] = useState<string | null>(null);
@@ -260,14 +283,28 @@ export function RouteSelectionScreen({ onStartTour }: RouteSelectionScreenProps)
       {/* FIX 3: Language selector */}
       <LanguageSelector language={language} onChangeLanguage={setLanguage} />
 
-      {!storage ? (
+      {storageOpening ? (
         <View style={styles.downloadRow}>
           <ActivityIndicator color="#2563eb" />
           <Text style={styles.downloadLabel}>Opening local storage…</Text>
         </View>
       ) : null}
 
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      {error ? (
+        <View style={styles.storageErrorBox}>
+          <Text style={styles.errorText}>{error}</Text>
+          {!storage ? (
+            <TouchableOpacity
+              style={styles.retryButton}
+              onPress={retryStorage}
+              accessibilityRole="button"
+              accessibilityLabel="Retry opening local storage"
+            >
+              <Text style={styles.retryButtonText}>Retry storage</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : null}
 
       {catalogWarning ? <Text style={styles.warningText}>{catalogWarning}</Text> : null}
 
@@ -303,6 +340,27 @@ export function RouteSelectionScreen({ onStartTour }: RouteSelectionScreenProps)
                   );
                 });
             }}
+            onDeskReplay={() => {
+              setStartError(null);
+              void loadInstalledTour(route.bundleId, route.version)
+                .then((loaded) => {
+                  handleStartTourWithConfig(loaded.config, {
+                    title: `${loaded.title} (desk replay)`,
+                    docsDir: loaded.docsDir,
+                    pack: loaded.ref,
+                    narratives: loaded.narratives,
+                    tones: loaded.tones,
+                    deskGpsReplay: true,
+                  });
+                })
+                .catch((err: unknown) => {
+                  const message =
+                    err instanceof Error ? err.message : 'Failed to load the tour pack.';
+                  setStartError(
+                    `Could not start the tour: ${message}. Try re-downloading the pack.`,
+                  );
+                });
+            }}
           />
         );
       })}
@@ -325,6 +383,21 @@ export function RouteSelectionScreen({ onStartTour }: RouteSelectionScreenProps)
               >
                 <Text style={styles.primaryButtonText}>Start Tour</Text>
               </TouchableOpacity>
+              {IS_DESK_DEBUG ? (
+                <TouchableOpacity
+                  style={styles.deskReplayButton}
+                  onPress={() =>
+                    handleStartTourWithConfig(route.tourConfig, {
+                      title: `${route.title} (desk replay)`,
+                      deskGpsReplay: true,
+                    })
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel={`Desk GPS replay for ${route.title}`}
+                >
+                  <Text style={styles.deskReplayButtonText}>Desk replay (GPS inject)</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           ))
         : null}
@@ -482,6 +555,26 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     textAlign: 'center',
   },
+  storageErrorBox: {
+    width: '100%',
+    maxWidth: 400,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  retryButton: {
+    marginTop: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    backgroundColor: '#2563eb',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  retryButtonText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
   startErrorText: {
     color: '#dc2626',
     fontSize: 13,
@@ -511,6 +604,23 @@ const styles = StyleSheet.create({
   },
   startButton: {
     backgroundColor: '#2563eb',
+  },
+  deskReplayButton: {
+    marginTop: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#d4d4d4',
+    backgroundColor: '#f9fafb',
+    alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  deskReplayButtonText: {
+    color: '#374151',
+    fontSize: 14,
+    fontWeight: '600',
   },
   primaryButtonText: {
     color: '#ffffff',

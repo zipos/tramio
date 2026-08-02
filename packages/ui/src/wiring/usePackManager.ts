@@ -7,6 +7,8 @@ import {
   createFetchPackHttpClient,
   loadPackTour,
   openDeviceStorage,
+  recoverDeviceStorage,
+  resetDeviceStorageCache,
   verifyManifestSignatureSpki,
   PackIntegrityError,
   type LoadedPackTour,
@@ -49,6 +51,8 @@ const manifestVerifier: ManifestVerifier = {
 
 export interface UsePackManagerResult {
   storage: StorageManager | null;
+  /** True while the first open (or a retry) is in flight. */
+  storageOpening: boolean;
   routes: readonly CatalogRouteEntry[];
   installState: Readonly<Record<string, PackInstallState>>;
   /** Storage / pack download failures. */
@@ -56,6 +60,8 @@ export interface UsePackManagerResult {
   /** Dev catalog probe — non-fatal; embedded routes still work. */
   catalogWarning: string | null;
   catalogBaseUrl: string;
+  /** Retry opening local storage (deletes DB if a prior open hung). */
+  retryStorage: () => void;
   refreshCatalog: () => Promise<void>;
   downloadPack: (bundleId: string, version: string) => Promise<void>;
   loadInstalledTour: (bundleId: string, version: string) => Promise<LoadedPackTour>;
@@ -68,23 +74,58 @@ export function usePackManager(): UsePackManagerResult {
   const [installState, setInstallState] = useState<Readonly<Record<string, PackInstallState>>>({});
   const [error, setError] = useState<string | null>(null);
   const [catalogWarning, setCatalogWarning] = useState<string | null>(null);
+  const [storageRetry, setStorageRetry] = useState(0);
+  const [storageOpening, setStorageOpening] = useState(true);
 
   const catalogBaseUrl = useMemo(() => resolveCatalogBaseUrl(), []);
 
   useEffect(() => {
     let cancelled = false;
-    openDeviceStorage()
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    setStorageOpening(true);
+    setError(null);
+
+    const open =
+      storageRetry === 0
+        ? openDeviceStorage()
+        : recoverDeviceStorage().catch(() => openDeviceStorage());
+
+    const timed = new Promise<StorageManager>((resolve, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error('Opening local storage timed out. Tap Retry.'));
+      }, 10_000);
+      open.then(resolve, reject);
+    });
+
+    timed
       .then((mgr) => {
-        if (!cancelled) setStorage(mgr);
+        if (!cancelled) {
+          setStorage(mgr);
+          setStorageOpening(false);
+          setError(null);
+        }
       })
       .catch((err: unknown) => {
+        resetDeviceStorageCache();
         if (!cancelled) {
+          setStorage(null);
+          setStorageOpening(false);
           setError(err instanceof Error ? err.message : String(err));
         }
+      })
+      .finally(() => {
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
       });
+
     return () => {
       cancelled = true;
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
     };
+  }, [storageRetry]);
+
+  const retryStorage = useCallback(() => {
+    resetDeviceStorageCache();
+    setStorageRetry((n) => n + 1);
   }, []);
 
   const refreshCatalog = useCallback(async () => {
@@ -206,11 +247,13 @@ export function usePackManager(): UsePackManagerResult {
 
   return {
     storage,
+    storageOpening,
     routes,
     installState,
     error,
     catalogWarning,
     catalogBaseUrl,
+    retryStorage,
     refreshCatalog,
     downloadPack,
     loadInstalledTour,

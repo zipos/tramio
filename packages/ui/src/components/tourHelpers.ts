@@ -79,10 +79,13 @@ export function findNextPoi(
   poiNames: ReadonlyMap<string, string>,
   riderCoord?: LatLng,
 ): NextPoiInfo | null {
+  if (!poisAlongRoute || poisAlongRoute.length === 0) return null;
+  const consumedSet = consumed ?? new Set<string>();
+  const namesMap = poiNames ?? new Map<string, string>();
   let bestAhead: PoiAlongRoute | null = null;
 
   for (const poi of poisAlongRoute) {
-    if (consumed.has(poi.poiId)) continue;
+    if (!poi || consumedSet.has(poi.poiId)) continue;
     // POI is ahead if its along-route position is greater than the rider's.
     if (poi.alongRouteM > riderAlongRouteM) {
       bestAhead = poi;
@@ -96,12 +99,12 @@ export function findNextPoi(
   let distanceM = bestAhead.alongRouteM - riderAlongRouteM;
 
   // If rider coord is available, take the minimum of along-route and straight-line.
-  if (riderCoord) {
+  if (Array.isArray(riderCoord) && riderCoord.length === 2 && bestAhead.center) {
     const straightLine = haversine(riderCoord, bestAhead.center);
     distanceM = Math.min(distanceM, straightLine);
   }
 
-  const name = poiNames.get(bestAhead.poiId) ?? bestAhead.poiId;
+  const name = namesMap.get(bestAhead.poiId) ?? bestAhead.poiId;
   return { poiId: bestAhead.poiId, name, distanceM };
 }
 

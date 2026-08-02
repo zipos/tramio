@@ -3,7 +3,7 @@
 // Import from here in app code — never from `./index`, which pulls in
 // Node-only modules (better-sqlite3, node:fs, GTFS parser, etc.).
 
-export { openDeviceStorage } from './deviceStorage';
+export { openDeviceStorage, resetDeviceStorageCache, recoverDeviceStorage } from './deviceStorage';
 export { loadPackTour, type LoadedPackTour } from './packLoader';
 export { createFetchPackHttpClient, type FetchPackHttpClientOptions } from './fetchPackHttpClient';
 export { verifyManifestSignatureSpki } from './signatureVerify';

@@ -13,6 +13,8 @@
 //     smoothing, dwell, direction filter).
 //   - Emit `LocationAccepted` and `GeofenceDwell` engine events.
 //   - Wave 4: Distinguish delivery from acceptance, watchdog stalls, recovery.
+//   - Battery: cruise vs approach sampling via locationPowerPolicy; honour
+//     engine RequestLocationMode; optional desk GPS replay (no OS provider).
 //
 // BUG 4 FIX: Monotonic `cancelled` flag prevents async leaks. Once stop()
 // is called, no further location watches or background updates can start,
@@ -24,15 +26,25 @@
 // BUG 6 FIX: Track and expose background status so the UI can warn.
 
 import * as Location from 'expo-location';
-import type { Geofence, LatLng } from '../../../engine/src';
+import type { Geofence, LatLng, LocationMode } from '../../../engine/src';
 import {
   bindLocationSession,
   ingestLocationFix,
+  resyncLocationSessionAt,
   startBackgroundLocationUpdates,
   stopBackgroundLocationUpdates,
   unbindLocationSession,
   type LocationAdapterEvents,
 } from './backgroundLocationTask';
+import {
+  MODE_RESTART_COOLDOWN_MS,
+  resolveAdaptiveBand,
+  resolveEffectiveBand,
+  samplingForBand,
+  samplingOptionsEqual,
+  type LocationPowerBand,
+  type LocationSamplingOptions,
+} from './locationPowerPolicy';
 import type { BackgroundStatus } from './TourRuntime';
 
 export type { LocationAdapterEvents };
@@ -50,7 +62,7 @@ export type { LocationAdapterEvents };
 export type LocationDeliveryStatus = 'acquiring' | 'live' | 'recovering' | 'stalled';
 
 /** Which channel is currently active. */
-export type LocationChannel = 'foreground' | 'background';
+export type LocationChannel = 'foreground' | 'background' | 'replay';
 
 export type DeliveryStatusListener = (status: LocationDeliveryStatus) => void;
 
@@ -79,6 +91,13 @@ export interface RecoveryOptions {
   backoffMultiplier?: number;
   /** Maximum recovery attempts to expose to UI (cap for counter). Default: 99. */
   maxRecoveryCountForUI?: number;
+}
+
+export type LocationSource = 'live' | 'replay';
+
+export interface LocationAdapterStartOptions {
+  /** `replay` skips OS providers — desk testing on a real device. */
+  readonly source?: LocationSource;
 }
 
 const DEFAULT_STALL_THRESHOLD_MS = 15_000;
@@ -131,6 +150,18 @@ export class LocationAdapter {
   onRecoverySuccess: (() => void) | null = null;
   onRecoveryFailure: (() => void) | null = null;
   onChannelChange: ((channel: LocationChannel) => void) | null = null;
+  /** Fires when the effective cruise/approach band changes. */
+  onPowerBandChange: ((band: LocationPowerBand) => void) | null = null;
+
+  // ─── Battery / mode state ───────────────────────────────────────────
+  private locationSource: LocationSource = 'live';
+  private engineMode: LocationMode = 'tour-bg';
+  private adaptiveBand: LocationPowerBand = 'cruise';
+  private appliedBand: LocationPowerBand | null = null;
+  private appliedSampling: LocationSamplingOptions | null = null;
+  private lastRestartAtMs = 0;
+  private pendingApplyTimer: unknown = null;
+  private readonly consumedPois = new Set<string>();
 
   constructor(
     route: readonly LatLng[],
@@ -169,6 +200,14 @@ export class LocationAdapter {
     return this.activeChannel;
   }
 
+  getPowerBand(): LocationPowerBand {
+    return resolveEffectiveBand(this.engineMode, this.adaptiveBand);
+  }
+
+  getLocationSource(): LocationSource {
+    return this.locationSource;
+  }
+
   subscribeDeliveryStatus(listener: DeliveryStatusListener): () => void {
     this.deliveryStatusListeners.add(listener);
     return () => {
@@ -177,11 +216,22 @@ export class LocationAdapter {
   }
 
   /**
+   * Honour engine `RequestLocationMode`. `reconcile` / `tour-approach`
+   * force dense sampling; other modes defer to adaptive proximity.
+   */
+  setEngineMode(mode: LocationMode): void {
+    if (this.cancelled) return;
+    this.engineMode = mode;
+    void this.applyEffectiveSampling({ force: mode === 'reconcile' || mode === 'tour-approach' });
+  }
+
+  /**
    * Request immediate recovery if stalled/recovering and not rate-limited.
    * Called e.g. on AppState 'active' transition.
    */
   requestImmediateRecovery(): void {
     if (this.cancelled) return;
+    if (this.locationSource === 'replay') return;
     if (this.deliveryStatus !== 'stalled' && this.deliveryStatus !== 'recovering') return;
     // Reuse the scheduled recovery path — cancel current timer and trigger now.
     this.clearWatchdog();
@@ -193,8 +243,36 @@ export class LocationAdapter {
   /**
    * Request permission and begin watching position. Resolves once the
    * watch is established (or rejects to the permission-denied callback).
+   * Pass `{ source: 'replay' }` for desk GPS injection (no OS provider).
    */
-  async start(): Promise<void> {
+  async start(options?: LocationAdapterStartOptions): Promise<void> {
+    this.locationSource = options?.source ?? 'live';
+
+    const sessionEvents: LocationAdapterExtendedEvents = {
+      ...this.events,
+      onDelivered: (meta) => this.noteRawDelivery(meta.accuracyM),
+      onRejected: (meta) => this.events.onRejected?.(meta),
+      onAccepted: (update) => {
+        this.evaluateApproach(update.smoothed);
+        this.events.onAccepted(update);
+      },
+      onGeofenceDwell: (poiId) => {
+        this.consumedPois.add(poiId);
+        this.events.onGeofenceDwell(poiId);
+      },
+    };
+
+    if (this.locationSource === 'replay') {
+      if (this.cancelled) return;
+      this.active = true;
+      bindLocationSession(this.route, this.geofences, sessionEvents, () => this.active);
+      this.activeChannel = 'replay';
+      this.onChannelChange?.('replay');
+      this.onBackgroundStatusChange?.({ mode: 'foreground-only', reason: 'unavailable' });
+      this.setDeliveryStatus('acquiring');
+      return;
+    }
+
     const { status } = await Location.requestForegroundPermissionsAsync();
 
     // BUG 4 FIX: check cancellation after every await.
@@ -206,16 +284,7 @@ export class LocationAdapter {
     }
 
     this.active = true;
-    bindLocationSession(
-      this.route,
-      this.geofences,
-      {
-        ...this.events,
-        onDelivered: (meta) => this.noteRawDelivery(meta.accuracyM),
-        onRejected: (meta) => this.events.onRejected?.(meta),
-      },
-      () => this.active,
-    );
+    bindLocationSession(this.route, this.geofences, sessionEvents, () => this.active);
 
     // Foreground watch first — reliable on all platforms and permission states.
     await this.startForegroundWatch();
@@ -230,6 +299,32 @@ export class LocationAdapter {
     await this.tryEnableBackgroundUpdates();
   }
 
+  /**
+   * Inject a fix for desk/debug use. Works in both live and replay sources
+   * (bypasses the OS provider).
+   */
+  injectDebugFix(loc: Location.LocationObject): void {
+    if (this.cancelled) return;
+    this.handleRawDelivery(loc);
+  }
+
+  /**
+   * Reset pipeline kinematics so a large teleport is not spike-rejected.
+   */
+  resyncPipelineAt(coord: LatLng, accuracyM = 8): void {
+    if (this.cancelled) return;
+    resyncLocationSessionAt(coord, accuracyM);
+  }
+
+  /**
+   * Inject a single fix while `source === 'replay'`. No-op otherwise.
+   * Used by desk GPS replay on a physical device.
+   */
+  feedReplayFix(loc: Location.LocationObject): void {
+    if (this.cancelled || this.locationSource !== 'replay') return;
+    this.handleRawDelivery(loc);
+  }
+
   /** Stop watching and release the subscription. Monotonic — cannot be undone. */
   stop(): void {
     // BUG 4 FIX: set the permanent cancellation flag so no async
@@ -239,6 +334,7 @@ export class LocationAdapter {
     this.generation++;
     this.foregroundWatchGeneration++;
     this.clearWatchdog();
+    this.clearPendingApply();
     if (this.watch) {
       this.watch.remove();
       this.watch = null;
@@ -272,10 +368,128 @@ export class LocationAdapter {
     this.resetWatchdog();
   }
 
+  private evaluateApproach(coord: LatLng): void {
+    if (this.cancelled || this.locationSource === 'replay') return;
+    const next = resolveAdaptiveBand(
+      coord,
+      this.geofences,
+      this.consumedPois,
+      this.adaptiveBand === 'approach',
+    );
+    if (next === this.adaptiveBand) {
+      // Still refresh effective band in case engine mode changed.
+      void this.applyEffectiveSampling();
+      return;
+    }
+    this.adaptiveBand = next;
+    void this.applyEffectiveSampling();
+  }
+
+  private clearPendingApply(): void {
+    if (this.pendingApplyTimer !== null) {
+      this.clock.clearTimeout(this.pendingApplyTimer);
+      this.pendingApplyTimer = null;
+    }
+  }
+
+  private async applyEffectiveSampling(opts?: { force?: boolean }): Promise<void> {
+    if (this.cancelled || !this.active) return;
+    if (this.locationSource === 'replay') return;
+
+    const band = resolveEffectiveBand(this.engineMode, this.adaptiveBand);
+    const sampling = samplingForBand(band);
+
+    if (
+      !opts?.force &&
+      this.appliedSampling &&
+      samplingOptionsEqual(this.appliedSampling, sampling)
+    ) {
+      return;
+    }
+
+    const now = this.clock.now();
+    const elapsed = now - this.lastRestartAtMs;
+    if (!opts?.force && this.appliedSampling && elapsed < MODE_RESTART_COOLDOWN_MS) {
+      this.clearPendingApply();
+      const wait = MODE_RESTART_COOLDOWN_MS - elapsed;
+      const gen = this.generation;
+      this.pendingApplyTimer = this.clock.setTimeout(() => {
+        this.pendingApplyTimer = null;
+        if (this.cancelled || this.generation !== gen) return;
+        void this.applyEffectiveSampling({ force: true });
+      }, wait);
+      return;
+    }
+
+    this.appliedSampling = sampling;
+    this.lastRestartAtMs = now;
+    if (this.appliedBand !== band) {
+      this.appliedBand = band;
+      this.onPowerBandChange?.(band);
+    }
+
+    if (this.activeChannel === 'background') {
+      try {
+        await startBackgroundLocationUpdates(sampling);
+      } catch {
+        // Keep previous provider; next accepted fix can retry.
+      }
+      return;
+    }
+
+    if (this.activeChannel === 'foreground') {
+      await this.recreateForegroundWatch(sampling);
+    }
+  }
+
+  private async recreateForegroundWatch(sampling: LocationSamplingOptions): Promise<void> {
+    if (this.cancelled) return;
+    const gen = this.generation;
+
+    if (this.watch) {
+      this.foregroundWatchGeneration++;
+      this.watch.remove();
+      this.watch = null;
+    }
+    if (this.cancelled || this.generation !== gen) return;
+
+    const watchGen = ++this.foregroundWatchGeneration;
+    try {
+      const subscription = await Location.watchPositionAsync(
+        {
+          accuracy: sampling.accuracy as Location.Accuracy,
+          timeInterval: sampling.timeInterval,
+          distanceInterval: sampling.distanceInterval,
+          mayShowUserSettingsDialog: true,
+        },
+        (loc) => {
+          if (this.foregroundWatchGeneration !== watchGen) return;
+          this.handleRawDelivery(loc);
+        },
+      );
+
+      if (
+        this.cancelled ||
+        this.generation !== gen ||
+        this.foregroundWatchGeneration !== watchGen
+      ) {
+        subscription.remove();
+        return;
+      }
+
+      this.watch = subscription;
+      this.appliedSampling = sampling;
+    } catch {
+      if (this.cancelled || this.generation !== gen) return;
+      this.onRecoveryFailure?.();
+    }
+  }
+
   // ─── Watchdog & Recovery (private) ──────────────────────────────────
 
   private armWatchdog(): void {
     if (this.cancelled) return;
+    if (this.locationSource === 'replay') return;
     this.clearWatchdog();
     const gen = this.generation;
     this.watchdogTimer = this.clock.setTimeout(() => {
@@ -294,6 +508,10 @@ export class LocationAdapter {
 
   private resetWatchdog(): void {
     if (this.cancelled) return;
+    if (this.locationSource === 'replay') {
+      this.setDeliveryStatus('live');
+      return;
+    }
     // Transition to live.
     this.setDeliveryStatus('live');
     // Reset backoff on successful delivery.
@@ -321,7 +539,7 @@ export class LocationAdapter {
     try {
       if (this.activeChannel === 'background') {
         await this.recoverBackgroundChannel(gen);
-      } else {
+      } else if (this.activeChannel === 'foreground') {
         await this.recoverForegroundChannel(gen);
       }
     } finally {
@@ -342,50 +560,22 @@ export class LocationAdapter {
   }
 
   private async recoverForegroundChannel(gen: number): Promise<void> {
-    // Remove and recreate the foreground watch.
+    const sampling = samplingForBand(resolveEffectiveBand(this.engineMode, this.adaptiveBand));
     if (this.watch) {
       this.foregroundWatchGeneration++;
       this.watch.remove();
       this.watch = null;
     }
     if (this.cancelled || this.generation !== gen) return;
-
-    const watchGen = ++this.foregroundWatchGeneration;
-    try {
-      const subscription = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.High,
-          timeInterval: 1000,
-          distanceInterval: 1,
-        },
-        (loc) => {
-          if (this.foregroundWatchGeneration !== watchGen) return;
-          this.handleRawDelivery(loc);
-        },
-      );
-
-      if (
-        this.cancelled ||
-        this.generation !== gen ||
-        this.foregroundWatchGeneration !== watchGen
-      ) {
-        subscription.remove();
-        return;
-      }
-
-      this.watch = subscription;
-    } catch {
-      if (this.cancelled || this.generation !== gen) return;
-      this.onRecoveryFailure?.();
-    }
+    await this.recreateForegroundWatch(sampling);
   }
 
   private async recoverBackgroundChannel(gen: number): Promise<void> {
+    const sampling = samplingForBand(resolveEffectiveBand(this.engineMode, this.adaptiveBand));
     try {
-      // Use existing idempotent stop/start.
       await stopBackgroundLocationUpdates();
       if (this.cancelled || this.generation !== gen) return;
-      await startBackgroundLocationUpdates();
+      await startBackgroundLocationUpdates(sampling);
       if (this.cancelled || this.generation !== gen) return;
     } catch {
       if (this.cancelled || this.generation !== gen) return;
@@ -397,7 +587,6 @@ export class LocationAdapter {
         mode: 'foreground-only',
         reason: 'unavailable',
       });
-      // Arm a foreground watch instead.
       await this.recoverForegroundChannel(gen);
     }
   }
@@ -414,29 +603,14 @@ export class LocationAdapter {
     if (this.watch) return;
     if (this.cancelled) return;
 
-    const gen = this.generation;
-    const watchGen = ++this.foregroundWatchGeneration;
-    const subscription = await Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.High,
-        timeInterval: 1000,
-        distanceInterval: 1,
-      },
-      (loc) => {
-        if (this.foregroundWatchGeneration !== watchGen) return;
-        this.handleRawDelivery(loc);
-      },
-    );
+    const sampling = samplingForBand(resolveEffectiveBand(this.engineMode, this.adaptiveBand));
+    await this.recreateForegroundWatch(sampling);
+    if (this.cancelled || !this.watch) return;
 
-    // BUG 4 FIX: if cancelled or replaced while awaiting, immediately remove.
-    if (this.cancelled || this.generation !== gen || this.foregroundWatchGeneration !== watchGen) {
-      subscription.remove();
-      return;
-    }
-
-    this.watch = subscription;
     this.activeChannel = 'foreground';
     this.onChannelChange?.('foreground');
+    this.appliedBand = resolveEffectiveBand(this.engineMode, this.adaptiveBand);
+    this.onPowerBandChange?.(this.appliedBand);
   }
 
   private async tryEnableBackgroundUpdates(): Promise<void> {
@@ -461,7 +635,10 @@ export class LocationAdapter {
         return;
       }
 
-      await startBackgroundLocationUpdates();
+      const sampling =
+        this.appliedSampling ??
+        samplingForBand(resolveEffectiveBand(this.engineMode, this.adaptiveBand));
+      await startBackgroundLocationUpdates(sampling);
 
       // BUG 4 FIX: if cancelled while starting background updates, stop them.
       if (this.cancelled) {
