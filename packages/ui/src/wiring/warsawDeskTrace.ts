@@ -4,8 +4,8 @@ import type { LatLng } from '../../../engine/src';
 import { WARSAW_180_NORTH_GEOFENCES } from './warsaw180';
 import { buildDeskTrace, type ReplayFix } from './gpsReplay';
 
-/** Default: through Plac Trzech Krzyży (+ a couple more) for desk rides. */
-export const DESK_REPLAY_POI_COUNT = 8;
+/** Default: full Warsaw Bus 180 route through all 24 POIs for desk rides. */
+export const DESK_REPLAY_POI_COUNT = 24;
 
 export function warsaw180DeskWaypoints(count: number = DESK_REPLAY_POI_COUNT): LatLng[] {
   const out: LatLng[] = [];
