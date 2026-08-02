@@ -73,9 +73,8 @@ export interface DeskDebugSession {
  */
 export function createDeskDebugSession(ports: DeskDebugPorts): DeskDebugSession | null {
   if (!IS_DESK_DEBUG) return null;
-
   let handle: GpsReplayHandle | null = null;
-  let tripSpeedKmh = 30; // Default 30 km/h (standard Warsaw bus speed)
+  let tripSpeedKmh = 21; // Default 21 km/h (standard Warsaw bus average speed)
   let active = false;
 
   const snapRider = (coord: LatLng, route: readonly LatLng[]): void => {
@@ -116,7 +115,7 @@ export function createDeskDebugSession(ports: DeskDebugPorts): DeskDebugSession 
         tripSpeedKmh =
           rawMultiplier > 5 ? rawMultiplier : Math.round(rawMultiplier * BASE_TRACE_SPEED_KMH);
       } else {
-        tripSpeedKmh = 30;
+        tripSpeedKmh = 21;
       }
 
       const speedMultiplier = tripSpeedKmh / BASE_TRACE_SPEED_KMH;
@@ -148,7 +147,7 @@ export function createDeskDebugSession(ports: DeskDebugPorts): DeskDebugSession 
     },
 
     setTripSpeed(speedKmh: number) {
-      tripSpeedKmh = Math.max(5, speedKmh);
+      tripSpeedKmh = Math.max(5, Math.min(300, speedKmh));
       const mult = tripSpeedKmh / BASE_TRACE_SPEED_KMH;
       handle?.setSpeedMultiplier(mult);
       ports.onTripSpeedChange?.(tripSpeedKmh);
@@ -187,12 +186,11 @@ export function createDeskDebugSession(ports: DeskDebugPorts): DeskDebugSession 
       // 2. Resync the geofence pipeline so the jump is accepted without spike rejection.
       ports.resyncPipelineAt(center, 8);
 
-      // 3. Seek the GPS cursor to the next POI location.
+      // 3. Seek the GPS cursor AND snap the rider position to the target POI.
       if (handle) {
         handle.seekToCoord(center, Math.max(40, next.geometry.radiusMeters));
-      } else {
-        snapRider(center, config.route);
       }
+      snapRider(center, config.route);
 
       // 4. Trigger narration for the next POI.
       ports.triggerPoi(next.poiId);

@@ -212,30 +212,57 @@ export function startGpsReplay(options: StartGpsReplayOptions): GpsReplayHandle 
       if (stopped || fixes.length === 0) return false;
 
       let found = -1;
-      // Prefer forward seek from the current cursor, then full scan.
+      let minDistance = Infinity;
+
+      // Prefer forward seek from current index first
       for (let i = index; i < fixes.length; i++) {
-        if (haversine(fixes[i]!.coord, target) <= radiusM) {
+        const d = haversine(fixes[i]!.coord, target);
+        if (d <= radiusM) {
           found = i;
           break;
         }
+        if (d < minDistance) {
+          minDistance = d;
+          found = i;
+        }
       }
-      if (found < 0) {
+
+      // If no fix within radius ahead, scan full trace for nearest fix
+      if (found < 0 || (minDistance > radiusM && index > 0)) {
         for (let i = 0; i < fixes.length; i++) {
-          if (haversine(fixes[i]!.coord, target) <= radiusM) {
+          const d = haversine(fixes[i]!.coord, target);
+          if (d <= radiusM) {
             found = i;
             break;
           }
+          if (d < minDistance) {
+            minDistance = d;
+            found = i;
+          }
         }
       }
-      if (found < 0) return false;
+
+      if (found < 0) found = 0;
 
       clearSchedule();
       clearHeartbeat();
       complete = false;
       index = found;
       baseWall = clock.now() - fixes[found]!.offsetMs / speed;
-      emitFix(fixes[found]!);
-      index = found + 1;
+
+      // If the trace fix is slightly outside target radius, emit an exact fix at target
+      const targetFix: ReplayFix =
+        minDistance > radiusM
+          ? {
+              coord: target,
+              offsetMs: fixes[found]!.offsetMs,
+              accuracyM: 8,
+              speedMps: fixes[found]!.speedMps ?? 0,
+            }
+          : fixes[found]!;
+
+      emitFix(targetFix);
+      index = Math.min(fixes.length, found + 1);
       scheduleNext();
       return true;
     },
@@ -329,8 +356,8 @@ function bearingDeg(a: LatLng, b: LatLng): number {
 }
 
 export const BASE_TRACE_SPEED_KMH = 28.8;
-export const DESK_TRIP_KMH_SPEEDS = [15, 30, 45, 60] as const;
+export const DESK_TRIP_KMH_SPEEDS = [18, 21, 26, 35, 60, 100, 300] as const;
 export type DeskTripKmhSpeed = (typeof DESK_TRIP_KMH_SPEEDS)[number];
 /** Legacy multiplier list for backward compatibility. */
-export const DESK_TRIP_SPEEDS = [15, 30, 45, 60] as const;
+export const DESK_TRIP_SPEEDS = [18, 21, 26, 35, 60, 100, 300] as const;
 export type DeskTripSpeed = (typeof DESK_TRIP_SPEEDS)[number];

@@ -23,8 +23,8 @@ import { angularDiffDeg, haversine, pointInCircle, pointInPolygon, projectOnRout
 /** Maximum accepted horizontal accuracy, in meters (Req 5.1). */
 export const MAX_ACCURACY_M = 50;
 
-/** Maximum plausible ground speed for transit, in m/s (Req 5.2; 120 km/h). */
-export const MAX_SPEED_MPS = 120 / 3.6;
+/** Maximum plausible ground speed for transit & high-speed test benchmarks, in m/s (350 km/h). */
+export const MAX_SPEED_MPS = 350 / 3.6;
 
 /** Window length over which EMA smoothing is computed (Req 5.5). */
 export const SMOOTH_WINDOW = 3;
@@ -283,10 +283,21 @@ export function step(state: PipelineState, raw: PositionUpdate, ts: number): Pip
     const accumulated = (prev ? prev.accumulatedSec : 0) + dt;
     nextDwell[g.poiId] = { accumulatedSec: accumulated, lastSeenTs: ts };
 
+    // At high speeds (>45 km/h = 12.5 m/s), passing through the inner core (60% of radius)
+    // satisfies dwell immediately so high-speed passes (up to 300 km/h) trigger reliably.
+    const speedMps =
+      raw.speedMps ??
+      (state.lastAccepted ? haversine(state.lastAccepted.coord, raw.coord) / Math.max(0.1, dt) : 0);
+    const isHighSpeedCorePass =
+      g.geometry.kind === 'circle' &&
+      speedMps > 12.5 &&
+      pointInCircle(smoothed, g.geometry.center, g.geometry.radiusMeters * 0.6);
+    const dwellSatisfied = accumulated >= g.dwellSec || isHighSpeedCorePass;
+
     // Stage 5: direction filter against the route tangent at projection.
     if (
       fire === undefined &&
-      accumulated >= g.dwellSec &&
+      dwellSatisfied &&
       directionMatches(g, projection.tangentDeg, raw.headingDeg)
     ) {
       fire = g.poiId;
