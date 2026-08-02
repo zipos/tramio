@@ -381,9 +381,7 @@ Before accepting field-ride data:
 
 ### Residual from actual route-180 ride
 
-**No one has ridden with this build yet.** The field diagnostics feature exists
-precisely to instrument the first real ride. Residuals will be recorded here
-after the ride happens.
+**Initial physical test ride completed.** The user tested a 3-stop segment of Warsaw Bus 180 on a physical device. Playback and runtime delivery confirmed functional in the field. Full end-to-end ride diagnostics will be logged and analyzed in subsequent field iterations.
 
 ### Simulator boundary
 
@@ -402,11 +400,9 @@ timers to validate these scenarios deterministically without a device.
 
 ## Suggested Next Steps (highest value first)
 
-1. **Field-test bus 180 northbound end to end** — ride Wilanów → Żoliborz with
-   the screen locked and log which of the 24 POIs actually fire. The simulator
-   (`npm run simulate:180`) confirms all 24 fire in the deterministic model;
-   the field test validates GPS noise, background location, and side-of-street.
-   **No one has ridden the 180 with this build yet** — these are unverified.
+1. **Full-route field test bus 180 northbound end to end** — ride Wilanów → Żoliborz with
+   the screen locked and log which of the 24 POIs fire. Initial 3-stop physical test ride passed; full 24-POI ride remains for final calibration.
+
 2. **Enable `directionFilter`** on the 180 bundle — the filter is implemented
    in the geofence pipeline (Stage 5, `pipeline.ts`), but left unset on the
    authored geofences because an untested filter would silently suppress every
