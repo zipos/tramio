@@ -51,6 +51,8 @@ coverage/
 # Kiro chat session saves (/chat save writes these into cwd)
 tramio-overnight.json
 *.kiro-session.json
+kiro-final.json
+kiro-*.json
 
 # logs
 *.log
