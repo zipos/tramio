@@ -1,6 +1,23 @@
-# Tramio
+<div align="center">
 
-**GPS-triggered audio tours on ordinary buses and trams.**
+# 🚋 Tramio
+
+### Your bus is the tour bus.
+
+**A few-złoty transit ticket. A 150 PLN sightseeing bus. Same streets.**<br>
+Tramio turns ordinary city buses and trams into GPS-narrated audio tours, fully offline.
+
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
+![Expo SDK 57](https://img.shields.io/badge/Expo-SDK%2057-000020?logo=expo)
+![React Native 0.86](https://img.shields.io/badge/React%20Native-0.86-61dafb?logo=react)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)
+![Offline first](https://img.shields.io/badge/offline-first-2ea44f)
+
+[Architecture wiki](docs/wiki/Home.md) · [Engineering handoff](HANDOFF.md) · [Authoring guide](packages/authoring/AUTHORING.md)
+
+</div>
+
+---
 
 You board a real city route, start a tour, and narration fires as you pass landmarks — offline tiles, signed content packs, and a pure TypeScript tour engine deciding what plays next.
 
